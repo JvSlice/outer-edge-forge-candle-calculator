@@ -17,7 +17,7 @@ This is a mobile-friendly Flutter/Dart web app. The UI is in `lib/main.dart`, an
 - Fragrance per container is `wax weight × fragrance load / 100`.
 - Enter a positive whole number of containers; the default is 1.
 - See total wax and total fragrance for the batch. Results update as inputs change.
-- Use the separate **Split Fragrances** button to reveal a selector for 1, 2, or 3 fragrances. Equal shares are the default. Name each fragrance and adjust its share, including blends such as 75/25. Shares must be positive and total 100%; the amount of each fragrance is shown for one container and for the full batch.
+- Use the separate **Split Fragrances** button to reveal a selector for 1, 2, or 3 fragrances. Equal shares are the default. Name each fragrance and move its share slider, including blends such as 75/25. The other sliders adjust automatically to keep the blend at 100%; each share stays positive. For three fragrances, the remaining share is distributed in proportion to the other two shares. The amount of each fragrance is shown for one container and for the full batch.
 - Calculations keep full numeric precision until display, which uses two decimal places. Empty, invalid, zero, and negative input shows a clear message and affected results show a dash.
 - The interface uses a dark charcoal theme, copper accents, readable text, and large touch controls.
 
@@ -40,7 +40,7 @@ With a 75/25 blend, each container uses 6.00 g and 2.00 g; five containers use 3
 ## Local recipe library
 
 - **Recipes** opens a local list with create, load, edit, duplicate, delete, JSON export, and JSON import. Deletion requires confirmation. Imports are validated and added as copies; existing recipes are never silently overwritten. Matching names are labeled as imported copies.
-- Recipes may be incomplete drafts. A recipe stores its name, container type/name and size with unit, wax type and wax weight in grams, fragrance load, up to three named fragrance shares, wick quantity/series/size, center-to-center spacing with unit, wick arrangement, fragrance addition and pour temperatures with °F/°C selection, and notes.
+- Recipes may be incomplete drafts. A recipe stores its name, container type/name and size with unit, wax type and wax weight in grams, fragrance load, up to three named fragrance shares, wick quantity/series/size, center-to-center spacing with unit, wick arrangement, fragrance addition and pour temperatures with °F/°C selection, and notes. Share sliders also appear in the recipe editor. An imported or saved draft with invalid shares keeps its values until **Set equal shares** is pressed.
 - Loading a recipe fills the per-container calculator fields and fragrance blend. Batch quantity stays as entered. Calculator edits do not change a saved recipe until **Save Changes** is pressed.
 - Data is stored in this browser on this device using a repository-specific local-storage key. It remains available after closing the browser and while offline after the app has been cached. Browser data clearing can remove it, so **Export JSON** provides a backup for import on another device.
 - Recipe data, validation, and persistence are in `lib/recipe.dart` and `lib/recipe_repository.dart`. The editor and library are in `lib/recipe_pages.dart`; browser file transfer is isolated in `lib/recipe_file_io_web.dart`.
@@ -81,7 +81,7 @@ The `.github/workflows/deploy-pages.yml` workflow runs on pushes to `main`. It i
 - The release build completed under `/outer-edge-forge-candle-calculator/` with 27 precached URLs, including `main.dart.js`, CanvasKit and Skwasm files, fonts, shaders, manifest, and all three OEF icons.
 - Headless Chromium loaded the app online, activated the scoped worker, then loaded it again with network access disabled. The app rendered and requests for `main.dart.js` and CanvasKit WASM returned 200 from the cache.
 - An update simulation installed a new OEF cache, removed the old OEF cache, and refreshed the page. An unrelated app cache remained intact. The release worker was restored afterward.
-- Recipe repository tests cover restart persistence, drafts, edit/duplicate/delete, schema validation, and duplicate-safe imports. Widget tests cover loading a 75/25 recipe, keeping batch quantity, explicit saves, and creating distinct drafts. In a local release preview, Chromium saved a draft through the UI, downloaded a valid JSON backup, imported it as a separate copy, recovered both recipes after a normal restart, and loaded the library with network access disabled.
+- Recipe repository tests cover restart persistence, drafts, edit/duplicate/delete, schema validation, and duplicate-safe imports. Ratio and widget tests cover two- and three-fragrance slider adjustment, 100% totals, loading a 75/25 recipe, keeping batch quantity, explicit saves, invalid-draft reset, and creating distinct drafts. In a local release preview, Chromium saved a draft through the UI, downloaded a valid JSON backup, imported it as a separate copy, recovered both recipes after a normal restart, and loaded the library with network access disabled.
 
 ## Remaining tasks
 

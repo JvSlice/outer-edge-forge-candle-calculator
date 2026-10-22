@@ -102,6 +102,80 @@ void main() {
     expect(find.text('Enter a wax weight greater than zero.'), findsOneWidget);
   });
 
+  testWidgets('moving a blend slider updates its partner and amounts', (
+    tester,
+  ) async {
+    await openCalculator(tester);
+    await tester.enterText(find.byKey(const Key('wax-weight')), '100');
+    await tester.ensureVisible(find.byKey(const Key('split-button')));
+    await tester.tap(find.byKey(const Key('split-button')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('fragrance-count')));
+    await tester.tap(find.byKey(const Key('fragrance-count')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2 fragrances').last);
+    await tester.pumpAndSettle();
+    final first = find.byKey(const Key('fragrance-slider-0'));
+    await tester.ensureVisible(first);
+    await tester.drag(first, const Offset(70, 0));
+    await tester.pumpAndSettle();
+    final firstShare = tester.widget<Slider>(first).value;
+    final secondShare = tester
+        .widget<Slider>(find.byKey(const Key('fragrance-slider-1')))
+        .value;
+    expect(firstShare, greaterThan(50));
+    expect(firstShare + secondShare, closeTo(100, 1e-8));
+    expect(
+      value(tester, 'split-per-container'),
+      '${(8 * firstShare / 100).toStringAsFixed(2)} g',
+    );
+  });
+
+  testWidgets('incomplete recipe can reset shares before saving', (
+    tester,
+  ) async {
+    final repository = RecipeRepository(_MemoryStore());
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RecipeEditorPage(
+          repository: repository,
+          recipe: const CandleRecipe(
+            id: 'draft',
+            fragrances: [
+              FragrancePart(name: 'Cedar', percent: '75'),
+              FragrancePart(name: 'Amber', percent: ''),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Blend shares must be positive and add up to 100%.'),
+      findsOneWidget,
+    );
+    await tester.ensureVisible(
+      find.byKey(const Key('recipe-fragrance-slider-reset')),
+    );
+    await tester.tap(find.byKey(const Key('recipe-fragrance-slider-reset')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<Slider>(find.byKey(const Key('recipe-fragrance-slider-0')))
+          .value,
+      50,
+    );
+    await tester.ensureVisible(find.byKey(const Key('save-recipe')));
+    await tester.tap(find.byKey(const Key('save-recipe')));
+    await tester.pumpAndSettle();
+    expect(
+      (await repository.load()).single.fragrances
+          .map((part) => part.percent)
+          .toList(),
+      ['50', '50'],
+    );
+  });
+
   testWidgets('loading a 75/25 recipe keeps batch count and saves explicitly', (
     tester,
   ) async {
@@ -145,18 +219,12 @@ void main() {
       '5',
     );
     expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('fragrance-percent-0')))
-          .controller!
-          .text,
-      '75',
+      tester.widget<Slider>(find.byKey(const Key('fragrance-slider-0'))).value,
+      75,
     );
     expect(
-      tester
-          .widget<TextField>(find.byKey(const Key('fragrance-percent-1')))
-          .controller!
-          .text,
-      '25',
+      tester.widget<Slider>(find.byKey(const Key('fragrance-slider-1'))).value,
+      25,
     );
     expect(value(tester, 'total-wax'), '500.00 g');
     expect(value(tester, 'total-fragrance'), '40.00 g');
@@ -168,10 +236,21 @@ void main() {
     await tester.enterText(find.byKey(const Key('wax-weight')), '120');
     await tester.pumpAndSettle();
     expect((await repository.load()).single.waxGrams, '100');
+    final firstSlider = find.byKey(const Key('fragrance-slider-0'));
+    await tester.ensureVisible(firstSlider);
+    await tester.drag(firstSlider, const Offset(-50, 0));
+    await tester.pumpAndSettle();
+    final adjustedShare = tester.widget<Slider>(firstSlider).value;
+    expect(adjustedShare, lessThan(75));
     await tester.ensureVisible(find.byKey(const Key('save-changes-button')));
     await tester.tap(find.byKey(const Key('save-changes-button')));
     await tester.pumpAndSettle();
     expect((await repository.load()).single.waxGrams, '120');
+    final savedShares = (await repository.load()).single.fragrances
+        .map((part) => double.parse(part.percent))
+        .toList();
+    expect(savedShares.first, adjustedShare);
+    expect(savedShares.reduce((a, b) => a + b), closeTo(100, 1e-8));
     expect(
       tester
           .widget<TextField>(find.byKey(const Key('container-count')))

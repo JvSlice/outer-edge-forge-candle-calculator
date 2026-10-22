@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
+import 'fragrance_ratios.dart';
+import 'fragrance_share_sliders.dart';
 import 'recipe.dart';
 import 'recipe_file_io.dart';
 import 'recipe_repository.dart';
@@ -385,14 +387,18 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
   void _setCount(int count) {
     setState(() {
       _fragranceCount = count;
-      final values = count == 3
-          ? ['33.33', '33.33', '33.34']
-          : List.filled(count, '${100 ~/ count}');
+      final values = FragranceRatios.equal(count);
       for (var index = 0; index < count; index++) {
         _fragrancePercents[index].text = values[index];
       }
     });
   }
+
+  void _setFragranceShares(List<String> shares) => setState(() {
+    for (var index = 0; index < shares.length; index++) {
+      _fragrancePercents[index].text = shares[index];
+    }
+  });
 
   Future<void> _save() async {
     if (_saving) return;
@@ -505,20 +511,16 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
                       labelText: 'Fragrance ${index + 1} name',
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    key: Key('recipe-fragrance-percent-$index'),
-                    controller: _fragrancePercents[index],
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Fragrance ${index + 1} share',
-                      suffixText: '%',
-                    ),
-                  ),
                   const SizedBox(height: 16),
                 ],
+                FragranceShareSliders(
+                  entries: [
+                    for (var index = 0; index < _fragranceCount; index++)
+                      _fragrancePercents[index].text,
+                  ],
+                  keyPrefix: 'recipe-fragrance-slider',
+                  onChanged: _setFragranceShares,
+                ),
                 _heading('Wicks'),
                 _field('wickQuantity', 'Wick quantity', number: true),
                 _field('wickSeries', 'Wick series / type'),

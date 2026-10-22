@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 import 'candle_calculator.dart';
+import 'fragrance_ratios.dart';
+import 'fragrance_share_sliders.dart';
 import 'recipe.dart';
 import 'recipe_pages.dart';
 import 'recipe_repository.dart';
@@ -111,9 +113,7 @@ class _CandleHomeState extends State<CandleHome> {
   );
 
   void _setFragranceCount(int count) {
-    final equal = count == 3
-        ? ['33.33', '33.33', '33.34']
-        : List.filled(count, '${100 ~/ count}');
+    final equal = FragranceRatios.equal(count);
     setState(() {
       _fragranceCount = count;
       for (var index = 0; index < count; index++) {
@@ -121,6 +121,12 @@ class _CandleHomeState extends State<CandleHome> {
       }
     });
   }
+
+  void _setFragranceShares(List<String> shares) => setState(() {
+    for (var index = 0; index < shares.length; index++) {
+      _fragrancePercents[index].text = shares[index];
+    }
+  });
 
   CandleRecipe _calculatorRecipe() => CandleRecipe(
     id: _recipeRepository.newId(),
@@ -527,7 +533,7 @@ class _CandleHomeState extends State<CandleHome> {
         const _SimpleHeading('Blending', 'Split fragrances'),
         const SizedBox(height: 13),
         const Text(
-          'Name each fragrance and set its share of the total blend.',
+          'Name each fragrance. Slide a share to adjust the others automatically.',
           style: TextStyle(color: AppColors.muted, height: 1.5),
         ),
         const SizedBox(height: 22),
@@ -580,26 +586,14 @@ class _CandleHomeState extends State<CandleHome> {
                 hintText: 'e.g. Cedar',
               ),
             ),
-            const SizedBox(height: 12),
-            TextField(
-              key: Key('fragrance-percent-$index'),
-              controller: _fragrancePercents[index],
-              onChanged: _refresh,
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              decoration: InputDecoration(
-                labelText: 'Fragrance ${index + 1} share',
-                suffixText: '%',
-              ),
-            ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 14),
           ],
-          if (blendPercentages == null)
-            const Text(
-              'Blend shares must be positive and add up to 100%.',
-              style: TextStyle(color: AppColors.error),
-            ),
+          FragranceShareSliders(
+            entries: _currentFragrances.map((part) => part.percent).toList(),
+            keyPrefix: 'fragrance-slider',
+            onChanged: _setFragranceShares,
+          ),
+          const SizedBox(height: 14),
           for (var index = 0; index < _fragranceCount; index++) ...[
             const Divider(color: AppColors.border, height: 1),
             _ResultRow(
