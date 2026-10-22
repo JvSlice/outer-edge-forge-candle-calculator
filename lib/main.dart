@@ -1,23 +1,17 @@
 import 'package:flutter/material.dart';
 
+import 'app_colors.dart';
 import 'candle_calculator.dart';
+import 'recipe.dart';
+import 'recipe_pages.dart';
+import 'recipe_repository.dart';
 
 void main() => runApp(const CandleApp());
 
-class AppColors {
-  static const background = Color(0xFF17191A);
-  static const surface = Color(0xFF222424);
-  static const input = Color(0xFF191B1B);
-  static const border = Color(0xFF484640);
-  static const copper = Color(0xFFDA9B6D);
-  static const copperDark = Color(0xFFA6653E);
-  static const text = Color(0xFFF3F0E9);
-  static const muted = Color(0xFFB7B2AA);
-  static const error = Color(0xFFF0ABA5);
-}
-
 class CandleApp extends StatelessWidget {
-  const CandleApp({super.key});
+  const CandleApp({super.key, this.recipeRepository});
+
+  final RecipeRepository? recipeRepository;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
@@ -60,12 +54,14 @@ class CandleApp extends StatelessWidget {
         ),
       ),
     ),
-    home: const CandleHome(),
+    home: CandleHome(recipeRepository: recipeRepository),
   );
 }
 
 class CandleHome extends StatefulWidget {
-  const CandleHome({super.key});
+  const CandleHome({super.key, this.recipeRepository});
+
+  final RecipeRepository? recipeRepository;
 
   @override
   State<CandleHome> createState() => _CandleHomeState();
@@ -74,19 +70,130 @@ class CandleHome extends StatefulWidget {
 class _CandleHomeState extends State<CandleHome> {
   final _waxController = TextEditingController();
   final _containerController = TextEditingController(text: '1');
+  final _fragranceNames = List.generate(3, (_) => TextEditingController());
+  final _fragrancePercents = List.generate(
+    3,
+    (index) => TextEditingController(text: index == 0 ? '100' : ''),
+  );
+  late final RecipeRepository _recipeRepository;
+  CandleRecipe? _activeRecipe;
   bool _started = false;
   bool _showSplit = false;
   int _loadPercent = 8;
   int _fragranceCount = 1;
 
   @override
+  void initState() {
+    super.initState();
+    _recipeRepository =
+        widget.recipeRepository ??
+        RecipeRepository(SharedPreferencesRecipeStore());
+  }
+
+  @override
   void dispose() {
     _waxController.dispose();
     _containerController.dispose();
+    for (final controller in [..._fragranceNames, ..._fragrancePercents]) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   void _refresh(String _) => setState(() {});
+
+  List<FragrancePart> get _currentFragrances => List.generate(
+    _fragranceCount,
+    (index) => FragrancePart(
+      name: _fragranceNames[index].text,
+      percent: _fragrancePercents[index].text,
+    ),
+  );
+
+  void _setFragranceCount(int count) {
+    final equal = count == 3
+        ? ['33.33', '33.33', '33.34']
+        : List.filled(count, '${100 ~/ count}');
+    setState(() {
+      _fragranceCount = count;
+      for (var index = 0; index < count; index++) {
+        _fragrancePercents[index].text = equal[index];
+      }
+    });
+  }
+
+  CandleRecipe _calculatorRecipe() => CandleRecipe(
+    id: _recipeRepository.newId(),
+    waxGrams: _waxController.text,
+    loadPercent: _loadPercent,
+    fragrances: _currentFragrances,
+  );
+
+  Future<void> _openRecipes() async {
+    final loaded = await Navigator.of(context).push<CandleRecipe>(
+      MaterialPageRoute(
+        builder: (_) => RecipeLibraryPage(
+          repository: _recipeRepository,
+          newRecipeTemplate: _calculatorRecipe(),
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (loaded == null) {
+      final activeId = _activeRecipe?.id;
+      if (activeId == null) return;
+      try {
+        final recipes = await _recipeRepository.load();
+        if (!mounted) return;
+        CandleRecipe? current;
+        for (final recipe in recipes) {
+          if (recipe.id == activeId) current = recipe;
+        }
+        setState(() => _activeRecipe = current);
+      } catch (_) {
+        // The library shows storage errors; keep the current calculator draft.
+      }
+      return;
+    }
+    setState(() {
+      _activeRecipe = loaded;
+      _waxController.text = loaded.waxGrams;
+      _loadPercent = loaded.loadPercent;
+      _fragranceCount = loaded.fragrances.length;
+      _showSplit = true;
+      for (var index = 0; index < 3; index++) {
+        _fragranceNames[index].text = index < loaded.fragrances.length
+            ? loaded.fragrances[index].name
+            : '';
+        _fragrancePercents[index].text = index < loaded.fragrances.length
+            ? loaded.fragrances[index].percent
+            : '';
+      }
+    });
+  }
+
+  Future<void> _saveChanges() async {
+    final active = _activeRecipe;
+    if (active == null) return;
+    try {
+      final updated = active.copyWith(
+        waxGrams: _waxController.text,
+        loadPercent: _loadPercent,
+        fragrances: _currentFragrances,
+      );
+      await _recipeRepository.save(updated);
+      if (!mounted) return;
+      setState(() => _activeRecipe = updated);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Recipe changes saved on this device.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not save recipe: $error')));
+    }
+  }
 
   @override
   Widget build(BuildContext context) =>
@@ -161,6 +268,9 @@ class _CandleHomeState extends State<CandleHome> {
 
   Widget _buildCalculator() {
     final wax = CandleCalculator.parseWaxGrams(_waxController.text);
+    final blendPercentages = CandleCalculator.parseBlendPercentages(
+      _currentFragrances.map((part) => part.percent).toList(),
+    );
     final containers = CandleCalculator.parseContainerCount(
       _containerController.text,
     );
@@ -173,6 +283,7 @@ class _CandleHomeState extends State<CandleHome> {
           loadPercent: _loadPercent,
           containerCount: containers,
           fragranceCount: _fragranceCount,
+          blendPercentages: blendPercentages,
         );
       } on ArgumentError {
         amountError = 'Amounts are too large to calculate.';
@@ -220,6 +331,31 @@ class _CandleHomeState extends State<CandleHome> {
                     'A clear measure for every pour.',
                     style: TextStyle(color: AppColors.muted),
                   ),
+                  const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 10,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      OutlinedButton.icon(
+                        key: const Key('recipes-button'),
+                        onPressed: _openRecipes,
+                        icon: const Icon(Icons.book_outlined),
+                        label: const Text('Recipes'),
+                      ),
+                      if (_activeRecipe != null) ...[
+                        Text(
+                          'Loaded: ${_activeRecipe!.displayName}',
+                          style: const TextStyle(color: AppColors.muted),
+                        ),
+                        FilledButton(
+                          key: const Key('save-changes-button'),
+                          onPressed: _saveChanges,
+                          child: const Text('Save Changes'),
+                        ),
+                      ],
+                    ],
+                  ),
                   const SizedBox(height: 30),
                   LayoutBuilder(
                     builder: (context, constraints) {
@@ -233,7 +369,11 @@ class _CandleHomeState extends State<CandleHome> {
                         children: [
                           _buildBatchPanel(amounts),
                           const SizedBox(height: 18),
-                          _buildSplitPanel(amounts, perContainer),
+                          _buildSplitPanel(
+                            amounts,
+                            perContainer,
+                            blendPercentages,
+                          ),
                         ],
                       );
                       if (constraints.maxWidth < 760) {
@@ -307,18 +447,21 @@ class _CandleHomeState extends State<CandleHome> {
         const SizedBox(height: 25),
         const _FieldLabel('Fragrance load'),
         const SizedBox(height: 9),
-        DropdownButtonFormField<int>(
-          key: const Key('fragrance-load'),
-          isExpanded: true,
-          initialValue: _loadPercent,
-          decoration: const InputDecoration(),
-          items: [6, 7, 8, 9, 10]
-              .map(
-                (value) =>
-                    DropdownMenuItem(value: value, child: Text('$value%')),
-              )
-              .toList(),
-          onChanged: (value) => setState(() => _loadPercent = value ?? 8),
+        KeyedSubtree(
+          key: ValueKey('load-$_loadPercent'),
+          child: DropdownButtonFormField<int>(
+            key: const Key('fragrance-load'),
+            isExpanded: true,
+            initialValue: _loadPercent,
+            decoration: const InputDecoration(),
+            items: [6, 7, 8, 9, 10]
+                .map(
+                  (value) =>
+                      DropdownMenuItem(value: value, child: Text('$value%')),
+                )
+                .toList(),
+            onChanged: (value) => setState(() => _loadPercent = value ?? 8),
+          ),
         ),
         const SizedBox(height: 24),
         _ResultRow(
@@ -373,76 +516,119 @@ class _CandleHomeState extends State<CandleHome> {
     ),
   );
 
-  Widget _buildSplitPanel(CandleAmounts? amounts, double? perContainer) =>
-      _Panel(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _SimpleHeading('Blending', 'Split fragrances'),
-            const SizedBox(height: 13),
-            const Text(
-              'Divide the fragrance evenly across your chosen scents.',
-              style: TextStyle(color: AppColors.muted, height: 1.5),
-            ),
-            const SizedBox(height: 22),
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: FilledButton(
-                key: const Key('split-button'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: AppColors.copperDark,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                ),
-                onPressed: () => setState(() => _showSplit = !_showSplit),
-                child: const Text('Split Fragrances'),
-              ),
-            ),
-            if (_showSplit) ...[
-              const SizedBox(height: 24),
-              const _FieldLabel('Number of fragrances'),
-              const SizedBox(height: 9),
-              DropdownButtonFormField<int>(
-                key: const Key('fragrance-count'),
-                isExpanded: true,
-                initialValue: _fragranceCount,
-                decoration: const InputDecoration(),
-                items: [1, 2, 3]
-                    .map(
-                      (count) => DropdownMenuItem(
-                        value: count,
-                        child: Text('$count fragrance${count == 1 ? '' : 's'}'),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (value) =>
-                    setState(() => _fragranceCount = value ?? 1),
-              ),
-              const SizedBox(height: 18),
-              const Divider(color: AppColors.border, height: 1),
-              _ResultRow(
-                label: 'Each fragrance · per container',
-                amount: perContainer == null
-                    ? null
-                    : CandleCalculator.eachFragrance(
-                        perContainer,
-                        _fragranceCount,
-                      ),
-                valueKey: const Key('split-per-container'),
-              ),
-              const Divider(color: AppColors.border, height: 1),
-              _ResultRow(
-                label: 'Each fragrance · full batch',
-                amount: amounts?.eachFragranceForBatch,
-                valueKey: const Key('split-per-batch'),
-              ),
-            ],
-          ],
+  Widget _buildSplitPanel(
+    CandleAmounts? amounts,
+    double? perContainer,
+    List<double>? blendPercentages,
+  ) => _Panel(
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SimpleHeading('Blending', 'Split fragrances'),
+        const SizedBox(height: 13),
+        const Text(
+          'Name each fragrance and set its share of the total blend.',
+          style: TextStyle(color: AppColors.muted, height: 1.5),
         ),
-      );
+        const SizedBox(height: 22),
+        SizedBox(
+          width: double.infinity,
+          height: 56,
+          child: FilledButton(
+            key: const Key('split-button'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.copperDark,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(11),
+              ),
+            ),
+            onPressed: () => setState(() => _showSplit = !_showSplit),
+            child: const Text('Split Fragrances'),
+          ),
+        ),
+        if (_showSplit) ...[
+          const SizedBox(height: 24),
+          const _FieldLabel('Number of fragrances'),
+          const SizedBox(height: 9),
+          KeyedSubtree(
+            key: ValueKey('count-$_fragranceCount'),
+            child: DropdownButtonFormField<int>(
+              key: const Key('fragrance-count'),
+              isExpanded: true,
+              initialValue: _fragranceCount,
+              decoration: const InputDecoration(),
+              items: [1, 2, 3]
+                  .map(
+                    (count) => DropdownMenuItem(
+                      value: count,
+                      child: Text('$count fragrance${count == 1 ? '' : 's'}'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => _setFragranceCount(value ?? 1),
+            ),
+          ),
+          const SizedBox(height: 18),
+          for (var index = 0; index < _fragranceCount; index++) ...[
+            TextField(
+              key: Key('fragrance-name-$index'),
+              controller: _fragranceNames[index],
+              onChanged: _refresh,
+              decoration: InputDecoration(
+                labelText: 'Fragrance ${index + 1} name',
+                hintText: 'e.g. Cedar',
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: Key('fragrance-percent-$index'),
+              controller: _fragrancePercents[index],
+              onChanged: _refresh,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: InputDecoration(
+                labelText: 'Fragrance ${index + 1} share',
+                suffixText: '%',
+              ),
+            ),
+            const SizedBox(height: 18),
+          ],
+          if (blendPercentages == null)
+            const Text(
+              'Blend shares must be positive and add up to 100%.',
+              style: TextStyle(color: AppColors.error),
+            ),
+          for (var index = 0; index < _fragranceCount; index++) ...[
+            const Divider(color: AppColors.border, height: 1),
+            _ResultRow(
+              label:
+                  '${_fragranceNames[index].text.trim().isEmpty ? 'Fragrance ${index + 1}' : _fragranceNames[index].text.trim()} · per container',
+              amount: perContainer == null || blendPercentages == null
+                  ? null
+                  : perContainer * blendPercentages[index] / 100,
+              valueKey: Key(
+                index == 0
+                    ? 'split-per-container'
+                    : 'split-per-container-$index',
+              ),
+            ),
+            _ResultRow(
+              label:
+                  '${_fragranceNames[index].text.trim().isEmpty ? 'Fragrance ${index + 1}' : _fragranceNames[index].text.trim()} · full batch',
+              amount: amounts == null || blendPercentages == null
+                  ? null
+                  : amounts.totalFragrance * blendPercentages[index] / 100,
+              valueKey: Key(
+                index == 0 ? 'split-per-batch' : 'split-per-batch-$index',
+              ),
+            ),
+          ],
+        ],
+      ],
+    ),
+  );
 }
 
 class _Panel extends StatelessWidget {
