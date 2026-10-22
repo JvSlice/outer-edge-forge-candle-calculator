@@ -118,6 +118,7 @@ void main() {
     await tester.pumpAndSettle();
     final first = find.byKey(const Key('fragrance-slider-0'));
     await tester.ensureVisible(first);
+    expect(tester.widget<Slider>(first).divisions, 98);
     await tester.drag(first, const Offset(70, 0));
     await tester.pumpAndSettle();
     final firstShare = tester.widget<Slider>(first).value;
@@ -125,6 +126,8 @@ void main() {
         .widget<Slider>(find.byKey(const Key('fragrance-slider-1')))
         .value;
     expect(firstShare, greaterThan(50));
+    expect(firstShare, firstShare.roundToDouble());
+    expect(secondShare, secondShare.roundToDouble());
     expect(firstShare + secondShare, closeTo(100, 1e-8));
     expect(
       value(tester, 'split-per-container'),
