@@ -1,6 +1,6 @@
 # Outer Edge Forge Candle Calculator — Version 1
 
-This is a mobile-friendly Flutter/Dart web app. The UI is in `lib/main.dart`, and calculation and input parsing are in `lib/candle_calculator.dart`. Build for a GitHub Pages repository URL with Flutter's `--base-href` option.
+This is a mobile-friendly Flutter/Dart web app. The calculator UI is in `lib/main.dart`; candle and cost calculations are in `lib/candle_calculator.dart` and `lib/cost_calculator.dart`. Build for a GitHub Pages repository URL with Flutter's `--base-href` option.
 
 ## Artwork and installation metadata
 
@@ -17,7 +17,7 @@ This is a mobile-friendly Flutter/Dart web app. The UI is in `lib/main.dart`, an
 - Fragrance per container is `wax weight × fragrance load / 100`.
 - Enter a positive whole number of containers; the default is 1.
 - See total wax and total fragrance for the batch. Results update as inputs change.
-- Use the separate **Split Fragrances** button to reveal a selector for 1, 2, or 3 fragrances. The fragrance is split equally, with the amount of each fragrance shown for one container and for the full batch.
+- Use the separate **Split Fragrances** button to reveal a selector for 1, 2, or 3 fragrances. Equal shares are the default. Name each fragrance and move its share slider, including blends such as 75/25. The other sliders adjust automatically to keep the blend at 100%; each share stays positive. For three fragrances, the remaining share is distributed in proportion to the other two shares. The amount of each fragrance is shown for one container and for the full batch.
 - Calculations keep full numeric precision until display, which uses two decimal places. Empty, invalid, zero, and negative input shows a clear message and affected results show a dash.
 - The interface uses a dark charcoal theme, copper accents, readable text, and large touch controls.
 
@@ -34,6 +34,25 @@ With 100 g wax, 8% fragrance load, and 5 containers:
 | Each of 2 fragrances, full batch | 20.00 g |
 | Each of 3 fragrances, per container | 2.67 g |
 | Each of 3 fragrances, full batch | 13.33 g |
+
+With a 75/25 blend, each container uses 6.00 g and 2.00 g; five containers use 30.00 g and 10.00 g.
+
+## Local recipe library
+
+- **Recipes** opens a local list with create, load, edit, duplicate, delete, JSON export, and JSON import. Deletion requires confirmation. Imports are validated and added as copies; existing recipes are never silently overwritten. Matching names are labeled as imported copies.
+- Recipes may be incomplete drafts. A recipe stores its name, container type/name and size with unit, wax type and wax weight in grams, fragrance load, up to three named fragrance shares, wick quantity/series/size, center-to-center spacing with unit, wick arrangement, fragrance addition and pour temperatures with °F/°C selection, and notes. Share sliders also appear in the recipe editor. An imported or saved draft with invalid shares keeps its values until **Set equal shares** is pressed.
+- Loading a recipe fills the per-container calculator fields and fragrance blend. Batch quantity stays as entered. Calculator edits do not change a saved recipe until **Save Changes** is pressed.
+- Data is stored in this browser on this device using a repository-specific local-storage key. It remains available after closing the browser and while offline after the app has been cached. Browser data clearing can remove it, so **Export JSON** provides a backup for import on another device.
+- Recipe data, validation, and persistence are in `lib/recipe.dart` and `lib/recipe_repository.dart`. The editor and library are in `lib/recipe_pages.dart`; browser file transfer is isolated in `lib/recipe_file_io_web.dart`.
+
+## Material cost calculator (issue #3)
+
+- **Material costs** opens a standalone calculation using the current calculator quantities. Select a saved recipe on that screen to load its wax type and grams, fragrance names and shares, wick quantity, and saved cost assumptions. Batch quantity remains a separate one-off input.
+- Enter wax purchase price and package pounds; each fragrance bottle's price, size, and unit; cost per wick; vessel cost; and additional per-container costs such as labels or packaging. A zero cost is valid, while a missing or invalid price leaves the material total blank and identifies the missing input.
+- Weight ounces use exactly 28.349523125 g/oz, and pounds use exactly 453.59237 g/lb. A fluid-ounce bottle requires its fragrance density in g/mL or the bottle's net fragrance weight in grams. US fluid ounces use 29.5735295625 mL/fl oz. The net weight takes precedence when both are entered. Fluid ounces are never treated as weight ounces.
+- The screen shows component grams and costs, wax/wick/vessel/additional costs per container, itemized batch costs, total wax and fragrance grams, and batch grams for each fragrance. Material totals exclude labor, taxes, selling fees, and profit. Calculations retain precision internally; each displayed currency value rounds **up** to the nearest cent, while grams display to two decimal places. Totals come from unrounded costs, so they can differ by a cent from the sum of individually displayed lines.
+- Cost assumptions are saved only with **Save costs to recipe**. The screen flags unsaved cost changes and one-off quantity changes. Saving costs does not save changed recipe quantities. Cost fields are included in recipe JSON export/import, and older backups without costs still load. If a recipe's fragrance name changes, its old bottle assumption is cleared for that slot.
+- The issue's example has $0.771617… wax, $0.705479… fragrance, $0.20 wicks, and $1.00 vessel per container. With upward currency display this shows $0.78 wax, $0.71 fragrance, and $2.68 total per container. The unrounded five-container total is $13.385485783…, displayed as **$13.39**. The issue lists $13.38; that value does not follow from its inputs and conversions.
 
 ## Offline release
 
@@ -71,7 +90,9 @@ The `.github/workflows/deploy-pages.yml` workflow runs on pushes to `main`. It i
 - The release build completed under `/outer-edge-forge-candle-calculator/` with 27 precached URLs, including `main.dart.js`, CanvasKit and Skwasm files, fonts, shaders, manifest, and all three OEF icons.
 - Headless Chromium loaded the app online, activated the scoped worker, then loaded it again with network access disabled. The app rendered and requests for `main.dart.js` and CanvasKit WASM returned 200 from the cache.
 - An update simulation installed a new OEF cache, removed the old OEF cache, and refreshed the page. An unrelated app cache remained intact. The release worker was restored afterward.
+- Recipe repository tests cover restart persistence, drafts, edit/duplicate/delete, schema validation, duplicate-safe imports, and cost assumption backup. Ratio and widget tests cover two- and three-fragrance slider adjustment, 100% totals, loading a 75/25 recipe, keeping batch quantity, explicit saves, invalid-draft reset, and creating distinct drafts. Cost tests cover the issue's example, unequal prices, weight/fluid-ounce handling, missing costs, and linked versus one-off edits. In a local release preview before issue #3, Chromium saved a draft through the UI, downloaded a valid JSON backup, imported it as a separate copy, recovered both recipes after a normal restart, and loaded the library with network access disabled.
 
 ## Remaining tasks
 
 - Test installation, offline use, updates, and launcher appearance on the target Chromium and Apple devices. The manifest icons use `purpose: any`; no maskable variant has been made, so device launcher shapes should be reviewed for cropping.
+- Manually inspect the new material cost screen in Chromium on a narrow device viewport and test its linked save/reload flow offline before publishing these issue #3 changes.

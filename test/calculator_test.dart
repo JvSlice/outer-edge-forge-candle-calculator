@@ -38,6 +38,24 @@ void main() {
     expect(result.eachFragranceForBatch, closeTo(10.52625, 1e-10));
   });
 
+  test('75/25 blend uses full precision for one candle and the batch', () {
+    final percentages = CandleCalculator.parseBlendPercentages(['75', '25']);
+    expect(percentages, [75, 25]);
+    final amounts = CandleCalculator.calculate(
+      waxGrams: 100,
+      loadPercent: 8,
+      containerCount: 5,
+      fragranceCount: 2,
+      blendPercentages: percentages,
+    );
+    expect(amounts.blendPerContainer, [6, 2]);
+    expect(amounts.blendForBatch, [30, 10]);
+    expect(amounts.totalWax, 500);
+    expect(amounts.totalFragrance, 40);
+    expect(CandleCalculator.parseBlendPercentages(['75', '30']), isNull);
+    expect(CandleCalculator.parseBlendPercentages(['0', '100']), isNull);
+  });
+
   test('rejects empty, invalid, zero, and negative input', () {
     for (final text in ['', 'abc', '0', '-1', 'NaN']) {
       expect(CandleCalculator.parseWaxGrams(text), isNull);
