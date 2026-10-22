@@ -1,0 +1,66 @@
+name: Build and deploy OEF Candles
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.1'
+          channel: stable
+          cache: true
+      - name: Get Flutter packages
+        run: flutter pub get
+      - name: Analyze Dart code
+        run: flutter analyze
+      - name: Run calculator and widget tests
+        run: flutter test
+      - name: Build scoped offline release
+        run: node tools/build_web.mjs
+      - name: Check release assets
+        run: |
+          test -f build/web/index.html
+          test -f build/web/main.dart.js
+          test -f build/web/sw.js
+          test -f build/web/sw-register.js
+          test -f build/web/manifest.json
+          test -f build/web/icons/icon-192.png
+          test -f build/web/icons/icon-512.png
+          test -f build/web/icons/apple-touch-icon-180.png
+          grep -q '<base href="/outer-edge-forge-candle-calculator/">' build/web/index.html
+          grep -q 'APP_SCOPE.pathname' build/web/sw.js
+          grep -q 'oef-candles:' build/web/sw.js
+          if test -f build/web/flutter_service_worker.js; then exit 1; fi
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,25 @@
+{
+  "id": "./",
+  "name": "Outer Edge Forge Candle Calculator",
+  "short_name": "OEF Candles",
+  "description": "Calculate wax and fragrance amounts for one candle or a full batch.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#17191a",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
