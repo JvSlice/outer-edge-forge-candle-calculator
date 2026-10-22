@@ -60,11 +60,11 @@ class FragranceShareSliders extends StatelessWidget {
           ),
           Slider(
             key: Key('$keyPrefix-$index'),
-            min: 0.1,
-            max: values.length == 2 ? 99.9 : 99.8,
-            divisions: values.length == 2 ? 998 : 997,
+            min: 1,
+            max: values.length == 2 ? 99 : 98,
+            divisions: values.length == 2 ? 98 : 97,
             value: values[index]
-                .clamp(0.1, values.length == 2 ? 99.9 : 99.8)
+                .clamp(1, values.length == 2 ? 99 : 98)
                 .toDouble(),
             label: '${FragranceRatios.display(values[index])}%',
             semanticFormatterCallback: (value) =>

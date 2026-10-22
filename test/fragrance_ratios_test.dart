@@ -6,13 +6,13 @@ void main() {
   test('two sliders always complement each other', () {
     expect(FragranceRatios.adjust([50, 50], 0, 75), ['75', '25']);
     expect(FragranceRatios.adjust([75, 25], 1, 40), ['60', '40']);
-    expect(FragranceRatios.adjust([50, 50], 0, 100), ['99.9', '0.1']);
+    expect(FragranceRatios.adjust([50, 50], 0, 100), ['99', '1']);
   });
 
   test('three sliders preserve other shares in proportion and total 100', () {
     expect(FragranceRatios.adjust([50, 30, 20], 0, 70), ['70', '18', '12']);
-    final adjusted = FragranceRatios.adjust([33.3, 33.3, 33.4], 0, 50);
-    expect(adjusted.first, '50');
+    final adjusted = FragranceRatios.adjust([33.33, 33.33, 33.34], 2, 40);
+    expect(adjusted, ['30', '30', '40']);
     final parsed = CandleCalculator.parseBlendPercentages(adjusted);
     expect(parsed, isNotNull);
     expect(parsed!.reduce((a, b) => a + b), closeTo(100, 1e-8));

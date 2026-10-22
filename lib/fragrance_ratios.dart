@@ -16,9 +16,9 @@ class FragranceRatios {
     return fixed.replaceFirst(RegExp(r'\.?0+$'), '');
   }
 
-  /// Moves one share to the nearest tenth of a percent. Other shares keep
+  /// Moves one share to the nearest whole percent. Other shares keep
   /// their relative proportions, with rounding assigned to the largest
-  /// fractional remainder. Each fragrance retains at least 0.1%.
+  /// fractional remainder. Each fragrance retains at least 1%.
   static List<String> adjust(List<double> current, int changed, double value) {
     if (current.length < 2 ||
         current.length > 3 ||
@@ -32,8 +32,8 @@ class FragranceRatios {
       );
     }
     final count = current.length;
-    final selected = (value * 10).round().clamp(1, 1000 - count + 1);
-    final remaining = 1000 - selected;
+    final selected = value.round().clamp(1, 100 - count + 1);
+    final remaining = 100 - selected;
     final otherIndices = [
       for (var i = 0; i < count; i++)
         if (i != changed) i,
@@ -57,6 +57,6 @@ class FragranceRatios {
     for (var i = 0; i < math.max(0, extra - allocated); i++) {
       units[fractions[i].index]++;
     }
-    return units.map((unit) => display(unit / 10)).toList();
+    return units.map((unit) => '$unit').toList();
   }
 }
