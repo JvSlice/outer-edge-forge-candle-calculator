@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:outer_edge_forge_candle_calculator/cost_calculator.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe_repository.dart';
 
@@ -75,6 +76,47 @@ void main() {
     expect(await repo.load(), hasLength(2));
     await repo.delete(draft.id);
     expect((await repo.load()).single.id, copy.id);
+  });
+
+  test('cost assumptions survive reload and JSON export/import', () async {
+    final repository = RecipeRepository(MemoryStore());
+    final withCosts = twoWick.copyWith(
+      costs: const CostAssumptions(
+        waxPrice: '35',
+        waxPounds: '10',
+        fragrances: [
+          FragranceBottle(price: '10', size: '4'),
+          FragranceBottle(
+            price: '20',
+            size: '2',
+            unit: BottleUnit.fluidOz,
+            netGrams: '60',
+          ),
+        ],
+        wickUnitCost: '0.10',
+        vesselCost: '1.00',
+        additionalCost: '0',
+      ),
+    );
+    await repository.save(withCosts);
+    final reopened = RecipeRepository(repository.store);
+    expect((await reopened.load()).single.costs!.waxPrice, '35');
+    expect(
+      (await reopened.load()).single.costs!.fragrances[1].unit,
+      BottleUnit.fluidOz,
+    );
+    final backup = await reopened.exportJson();
+    final copy = RecipeBackup.parse(backup).recipes.single;
+    expect(copy.costs!.fragrances[1].netGrams, '60');
+    final destination = RecipeRepository(MemoryStore());
+    await destination.importAsCopies(await destination.inspectImport(backup));
+    expect((await destination.load()).single.costs!.wickUnitCost, '0.10');
+    expect(
+      RecipeBackup.parse(
+        RecipeBackup([twoWick]).toJsonString(),
+      ).recipes.single.costs,
+      isNull,
+    );
   });
 
   test('import validates backup and keeps duplicates as copies', () async {

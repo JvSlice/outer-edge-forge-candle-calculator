@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 import 'candle_calculator.dart';
+import 'cost_page.dart';
 import 'fragrance_ratios.dart';
 import 'fragrance_share_sliders.dart';
 import 'recipe.dart';
@@ -182,10 +183,19 @@ class _CandleHomeState extends State<CandleHome> {
     final active = _activeRecipe;
     if (active == null) return;
     try {
-      final updated = active.copyWith(
+      final latest = (await _recipeRepository.load()).where(
+        (recipe) => recipe.id == active.id,
+      );
+      if (latest.isEmpty) throw const FormatException('Recipe was deleted.');
+      final current = latest.single;
+      final updated = current.copyWith(
         waxGrams: _waxController.text,
         loadPercent: _loadPercent,
         fragrances: _currentFragrances,
+        costs: current.costs?.alignedToNames(
+          current.fragrances.map((part) => part.name).toList(),
+          _currentFragrances.map((part) => part.name).toList(),
+        ),
       );
       await _recipeRepository.save(updated);
       if (!mounted) return;
@@ -198,6 +208,27 @@ class _CandleHomeState extends State<CandleHome> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Could not save recipe: $error')));
+    }
+  }
+
+  Future<void> _openCosts() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CostPage(
+          repository: _recipeRepository,
+          initialRecipe: _calculatorRecipe(),
+          initialContainers: _containerController.text,
+        ),
+      ),
+    );
+    if (!mounted || _activeRecipe == null) return;
+    try {
+      final recipes = await _recipeRepository.load();
+      if (!mounted) return;
+      final current = recipes.where((item) => item.id == _activeRecipe!.id);
+      setState(() => _activeRecipe = current.isEmpty ? null : current.single);
+    } catch (_) {
+      // Keep the visible one-off quantities if local storage is unavailable.
     }
   }
 
@@ -348,6 +379,12 @@ class _CandleHomeState extends State<CandleHome> {
                         onPressed: _openRecipes,
                         icon: const Icon(Icons.book_outlined),
                         label: const Text('Recipes'),
+                      ),
+                      OutlinedButton.icon(
+                        key: const Key('costs-button'),
+                        onPressed: _openCosts,
+                        icon: const Icon(Icons.calculate_outlined),
+                        label: const Text('Material costs'),
                       ),
                       if (_activeRecipe != null) ...[
                         Text(

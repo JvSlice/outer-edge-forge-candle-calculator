@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'cost_calculator.dart';
+
 class FragrancePart {
   const FragrancePart({this.name = '', this.percent = '100'});
 
@@ -41,6 +43,7 @@ class CandleRecipe {
     this.pourTemperature = '',
     this.temperatureUnit = '°F',
     this.notes = '',
+    this.costs,
   });
 
   static const containerUnits = ['oz', 'mL', 'L', 'g', 'fl oz'];
@@ -66,6 +69,7 @@ class CandleRecipe {
   final String pourTemperature;
   final String temperatureUnit;
   final String notes;
+  final CostAssumptions? costs;
 
   String get displayName =>
       name.trim().isEmpty ? 'Untitled recipe' : name.trim();
@@ -90,6 +94,7 @@ class CandleRecipe {
     String? pourTemperature,
     String? temperatureUnit,
     String? notes,
+    CostAssumptions? costs,
   }) => CandleRecipe(
     id: id ?? this.id,
     name: name ?? this.name,
@@ -110,6 +115,7 @@ class CandleRecipe {
     pourTemperature: pourTemperature ?? this.pourTemperature,
     temperatureUnit: temperatureUnit ?? this.temperatureUnit,
     notes: notes ?? this.notes,
+    costs: costs ?? this.costs,
   );
 
   Map<String, Object> toJson() => {
@@ -132,6 +138,7 @@ class CandleRecipe {
     'pourTemperature': pourTemperature,
     'temperatureUnit': temperatureUnit,
     'notes': notes,
+    if (costs != null) 'costs': costs!.toJson(),
   };
 
   factory CandleRecipe.fromJson(Object? value) {
@@ -169,6 +176,14 @@ class CandleRecipe {
       'Fragrance addition temperature',
     );
     _optionalFiniteDouble(pourTemperature, 'Pour temperature');
+    final costs = map['costs'] == null
+        ? null
+        : CostAssumptions.fromJson(map['costs']);
+    if (costs != null && costs.fragrances.length != rawParts.length) {
+      throw const FormatException(
+        'Cost fragrance count does not match recipe.',
+      );
+    }
     return CandleRecipe(
       id: id,
       name: _string(map, 'name', 200),
@@ -189,6 +204,7 @@ class CandleRecipe {
       pourTemperature: pourTemperature,
       temperatureUnit: temperatureUnit,
       notes: _string(map, 'notes', 4000),
+      costs: costs,
     );
   }
 }

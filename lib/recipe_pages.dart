@@ -403,33 +403,41 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
-    final recipe = widget.recipe.copyWith(
-      name: _text('name'),
-      containerName: _text('containerName'),
-      containerSize: _text('containerSize'),
-      containerUnit: _containerUnit,
-      waxType: _text('waxType'),
-      waxGrams: _text('waxGrams'),
-      loadPercent: _loadPercent,
-      fragrances: List.generate(
-        _fragranceCount,
-        (index) => FragrancePart(
-          name: _fragranceNames[index].text,
-          percent: _fragrancePercents[index].text,
-        ),
+    final fragrances = List.generate(
+      _fragranceCount,
+      (index) => FragrancePart(
+        name: _fragranceNames[index].text,
+        percent: _fragrancePercents[index].text,
       ),
-      wickQuantity: _text('wickQuantity'),
-      wickSeries: _text('wickSeries'),
-      wickSize: _text('wickSize'),
-      wickSpacing: _text('wickSpacing'),
-      wickSpacingUnit: _spacingUnit,
-      wickArrangement: _text('wickArrangement'),
-      fragranceTemperature: _text('fragranceTemperature'),
-      pourTemperature: _text('pourTemperature'),
-      temperatureUnit: _temperatureUnit,
-      notes: _text('notes'),
     );
     try {
+      final stored = await widget.repository.load();
+      final matches = stored.where((item) => item.id == widget.recipe.id);
+      final base = matches.isEmpty ? widget.recipe : matches.single;
+      final recipe = base.copyWith(
+        name: _text('name'),
+        containerName: _text('containerName'),
+        containerSize: _text('containerSize'),
+        containerUnit: _containerUnit,
+        waxType: _text('waxType'),
+        waxGrams: _text('waxGrams'),
+        loadPercent: _loadPercent,
+        fragrances: fragrances,
+        costs: base.costs?.alignedToNames(
+          base.fragrances.map((part) => part.name).toList(),
+          fragrances.map((part) => part.name).toList(),
+        ),
+        wickQuantity: _text('wickQuantity'),
+        wickSeries: _text('wickSeries'),
+        wickSize: _text('wickSize'),
+        wickSpacing: _text('wickSpacing'),
+        wickSpacingUnit: _spacingUnit,
+        wickArrangement: _text('wickArrangement'),
+        fragranceTemperature: _text('fragranceTemperature'),
+        pourTemperature: _text('pourTemperature'),
+        temperatureUnit: _temperatureUnit,
+        notes: _text('notes'),
+      );
       await widget.repository.save(recipe);
       if (mounted) Navigator.pop(context, recipe);
     } catch (error) {

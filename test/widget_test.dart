@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:outer_edge_forge_candle_calculator/main.dart';
+import 'package:outer_edge_forge_candle_calculator/cost_calculator.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe_pages.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe_repository.dart';
@@ -258,6 +259,38 @@ void main() {
           .text,
       '5',
     );
+  });
+
+  testWidgets('calculator save preserves newer linked cost assumptions', (
+    tester,
+  ) async {
+    final repository = RecipeRepository(_MemoryStore());
+    const recipe = CandleRecipe(
+      id: 'costed',
+      name: 'Costed candle',
+      waxGrams: '100',
+      fragrances: [FragrancePart(name: 'Cedar', percent: '100')],
+    );
+    await repository.save(recipe);
+    await tester.pumpWidget(CandleApp(recipeRepository: repository));
+    await tester.tap(find.byKey(const Key('welcome-screen')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recipes-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('load-costed')));
+    await tester.pumpAndSettle();
+    await repository.save(
+      recipe.copyWith(
+        costs: const CostAssumptions(waxPrice: '35', waxPounds: '10'),
+      ),
+    );
+    await tester.enterText(find.byKey(const Key('wax-weight')), '120');
+    await tester.ensureVisible(find.byKey(const Key('save-changes-button')));
+    await tester.tap(find.byKey(const Key('save-changes-button')));
+    await tester.pumpAndSettle();
+    final saved = (await repository.load()).single;
+    expect(saved.waxGrams, '120');
+    expect(saved.costs!.waxPrice, '35');
   });
 
   testWidgets('creating two drafts gives each a separate saved ID', (

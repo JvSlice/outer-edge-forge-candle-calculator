@@ -1,6 +1,6 @@
 # Outer Edge Forge Candle Calculator — Version 1
 
-This is a mobile-friendly Flutter/Dart web app. The UI is in `lib/main.dart`, and calculation and input parsing are in `lib/candle_calculator.dart`. Build for a GitHub Pages repository URL with Flutter's `--base-href` option.
+This is a mobile-friendly Flutter/Dart web app. The calculator UI is in `lib/main.dart`; candle and cost calculations are in `lib/candle_calculator.dart` and `lib/cost_calculator.dart`. Build for a GitHub Pages repository URL with Flutter's `--base-href` option.
 
 ## Artwork and installation metadata
 
@@ -45,6 +45,15 @@ With a 75/25 blend, each container uses 6.00 g and 2.00 g; five containers use 3
 - Data is stored in this browser on this device using a repository-specific local-storage key. It remains available after closing the browser and while offline after the app has been cached. Browser data clearing can remove it, so **Export JSON** provides a backup for import on another device.
 - Recipe data, validation, and persistence are in `lib/recipe.dart` and `lib/recipe_repository.dart`. The editor and library are in `lib/recipe_pages.dart`; browser file transfer is isolated in `lib/recipe_file_io_web.dart`.
 
+## Material cost calculator (issue #3)
+
+- **Material costs** opens a standalone calculation using the current calculator quantities. Select a saved recipe on that screen to load its wax type and grams, fragrance names and shares, wick quantity, and saved cost assumptions. Batch quantity remains a separate one-off input.
+- Enter wax purchase price and package pounds; each fragrance bottle's price, size, and unit; cost per wick; vessel cost; and additional per-container costs such as labels or packaging. A zero cost is valid, while a missing or invalid price leaves the material total blank and identifies the missing input.
+- Weight ounces use exactly 28.349523125 g/oz, and pounds use exactly 453.59237 g/lb. A fluid-ounce bottle requires its fragrance density in g/mL or the bottle's net fragrance weight in grams. US fluid ounces use 29.5735295625 mL/fl oz. The net weight takes precedence when both are entered. Fluid ounces are never treated as weight ounces.
+- The screen shows component grams and costs, wax/wick/vessel/additional costs per container, itemized batch costs, total wax and fragrance grams, and batch grams for each fragrance. Material totals exclude labor, taxes, selling fees, and profit. All calculations retain precision until currency and grams are displayed to two decimal places.
+- Cost assumptions are saved only with **Save costs to recipe**. The screen flags unsaved cost changes and one-off quantity changes. Saving costs does not save changed recipe quantities. Cost fields are included in recipe JSON export/import, and older backups without costs still load. If a recipe's fragrance name changes, its old bottle assumption is cleared for that slot.
+- The issue's example yields $0.77 wax, $0.71 fragrance, $0.20 wicks, $1.00 vessel, and $2.68 material cost per container. Using the specified exact conversions, the unrounded five-container total is $13.385485783…, which rounds to **$13.39**. The issue lists $13.38; that value does not follow from its inputs with conventional two-decimal rounding.
+
 ## Offline release
 
 - `web/flutter_bootstrap.js` loads CanvasKit and Skwasm from this app's own `canvaskit/` directory, so Flutter rendering assets are available offline.
@@ -81,8 +90,9 @@ The `.github/workflows/deploy-pages.yml` workflow runs on pushes to `main`. It i
 - The release build completed under `/outer-edge-forge-candle-calculator/` with 27 precached URLs, including `main.dart.js`, CanvasKit and Skwasm files, fonts, shaders, manifest, and all three OEF icons.
 - Headless Chromium loaded the app online, activated the scoped worker, then loaded it again with network access disabled. The app rendered and requests for `main.dart.js` and CanvasKit WASM returned 200 from the cache.
 - An update simulation installed a new OEF cache, removed the old OEF cache, and refreshed the page. An unrelated app cache remained intact. The release worker was restored afterward.
-- Recipe repository tests cover restart persistence, drafts, edit/duplicate/delete, schema validation, and duplicate-safe imports. Ratio and widget tests cover two- and three-fragrance slider adjustment, 100% totals, loading a 75/25 recipe, keeping batch quantity, explicit saves, invalid-draft reset, and creating distinct drafts. In a local release preview, Chromium saved a draft through the UI, downloaded a valid JSON backup, imported it as a separate copy, recovered both recipes after a normal restart, and loaded the library with network access disabled.
+- Recipe repository tests cover restart persistence, drafts, edit/duplicate/delete, schema validation, duplicate-safe imports, and cost assumption backup. Ratio and widget tests cover two- and three-fragrance slider adjustment, 100% totals, loading a 75/25 recipe, keeping batch quantity, explicit saves, invalid-draft reset, and creating distinct drafts. Cost tests cover the issue's example, unequal prices, weight/fluid-ounce handling, missing costs, and linked versus one-off edits. In a local release preview before issue #3, Chromium saved a draft through the UI, downloaded a valid JSON backup, imported it as a separate copy, recovered both recipes after a normal restart, and loaded the library with network access disabled.
 
 ## Remaining tasks
 
 - Test installation, offline use, updates, and launcher appearance on the target Chromium and Apple devices. The manifest icons use `purpose: any`; no maskable variant has been made, so device launcher shapes should be reviewed for cropping.
+- Manually inspect the new material cost screen in Chromium on a narrow device viewport and test its linked save/reload flow offline before publishing these issue #3 changes.
