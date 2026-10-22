@@ -18,19 +18,29 @@ void main() {
         additionalCost: '0',
       ),
     );
-    expect(result.waxCost!.toStringAsFixed(2), '0.77');
-    expect(result.fragranceCost!.toStringAsFixed(2), '0.71');
-    expect(result.wickCost!.toStringAsFixed(2), '0.20');
-    expect(result.vesselCost!.toStringAsFixed(2), '1.00');
-    expect(result.materialCostPerContainer!.toStringAsFixed(2), '2.68');
-    // The issue lists $13.38, but the specified conversions give $13.385485…
-    // and conventional two-decimal rounding therefore displays $13.39.
-    expect(result.materialCostBatch!.toStringAsFixed(2), '13.39');
+    expect(CostCalculator.currencyUp(result.waxCost!), '0.78');
+    expect(CostCalculator.currencyUp(result.fragranceCost!), '0.71');
+    expect(CostCalculator.currencyUp(result.wickCost!), '0.20');
+    expect(CostCalculator.currencyUp(result.vesselCost!), '1.00');
+    expect(CostCalculator.currencyUp(result.materialCostPerContainer!), '2.68');
+    expect(CostCalculator.currencyUp(result.materialCostBatch!), '13.39');
     expect(result.waxGramsBatch, 500);
     expect(result.fragranceGramsBatch, 40);
     expect(result.fragranceGramsEach.single * 5, 40);
     expect(result.missing, isEmpty);
   });
+
+  test(
+    'currency display always rounds up without changing stored precision',
+    () {
+      expect(CostCalculator.currencyUp(0), '0.00');
+      expect(CostCalculator.currencyUp(0.28), '0.28');
+      expect(CostCalculator.currencyUp(0.28000000000000003), '0.28');
+      expect(CostCalculator.currencyUp(0.2800001), '0.29');
+      expect(CostCalculator.currencyUp(0.000000000001), '0.01');
+      expect(CostCalculator.currencyUp(13.3854857831934), '13.39');
+    },
+  );
 
   test('unequal blends use separate bottle prices', () {
     final result = CostCalculator.calculate(

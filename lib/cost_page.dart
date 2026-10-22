@@ -281,7 +281,7 @@ class _CostPageState extends State<CostPage> {
               value == null
                   ? '—'
                   : suffix == ' \$'
-                  ? '\$${value.toStringAsFixed(2)}'
+                  ? '\$${CostCalculator.currencyUp(value)}'
                   : '${value.toStringAsFixed(2)}$suffix',
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
@@ -349,7 +349,7 @@ class _CostPageState extends State<CostPage> {
                     ),
                   ),
                   const Text(
-                    'Excludes labor, taxes, selling fees, and profit.',
+                    'Excludes labor, taxes, selling fees, and profit. Displayed costs round up to the next cent; totals use unrounded values.',
                     style: TextStyle(color: AppColors.muted),
                   ),
                   const SizedBox(height: 20),

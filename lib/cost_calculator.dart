@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'candle_calculator.dart';
 
 enum BottleUnit { weightOz, fluidOz }
@@ -218,6 +220,21 @@ class CostCalculator {
   static const gramsPerPound = 453.59237;
   static const gramsPerWeightOunce = 28.349523125;
   static const millilitersPerUsFluidOunce = 29.5735295625;
+
+  /// Display a nonnegative cost by rounding upward to the next cent.
+  /// Tiny binary floating-point noise at an exact cent is ignored.
+  static String currencyUp(double amount) {
+    if (!amount.isFinite || amount < 0 || amount >= 1e21) {
+      throw ArgumentError.value(amount, 'amount', 'Invalid currency amount');
+    }
+    final cents = amount * 100;
+    final nearestCent = cents.roundToDouble();
+    final floatNoise = 8 * 2.220446049250313e-16 * math.max(1, cents.abs());
+    final normalized = (cents - nearestCent).abs() <= floatNoise
+        ? nearestCent
+        : cents;
+    return (normalized.ceil() / 100).toStringAsFixed(2);
+  }
 
   static double? positive(String text) {
     final value = double.tryParse(text.trim());

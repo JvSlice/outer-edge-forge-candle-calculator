@@ -69,7 +69,7 @@ void main() {
     await tester.enterText(find.byKey(const Key('cost-wickCost')), '0.10');
     await tester.enterText(find.byKey(const Key('cost-vesselCost')), '1');
     await tester.pumpAndSettle();
-    expect(find.text('\$0.77'), findsOneWidget);
+    expect(find.text('\$0.78'), findsOneWidget);
     expect(find.text('\$0.71'), findsWidgets);
     expect(find.text('\$2.68'), findsOneWidget);
     expect(find.text('\$13.39'), findsOneWidget);
