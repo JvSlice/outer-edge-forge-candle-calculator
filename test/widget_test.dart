@@ -103,6 +103,195 @@ void main() {
     expect(find.text('Enter a wax weight greater than zero.'), findsOneWidget);
   });
 
+  testWidgets('Save as Recipe transfers per-container blend, not batch wax', (
+    tester,
+  ) async {
+    final repository = RecipeRepository(_MemoryStore());
+    await repository.save(
+      const CandleRecipe(
+        id: 'formula-source',
+        name: 'Formula source',
+        waxGrams: '142',
+        loadPercent: 9,
+        fragrances: [
+          FragrancePart(name: 'Cedar', percent: '75'),
+          FragrancePart(name: 'Amber', percent: '25'),
+        ],
+      ),
+    );
+    await tester.pumpWidget(CandleApp(recipeRepository: repository));
+    await tester.tap(find.byKey(const Key('welcome-screen')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('container-count')), '3');
+    await tester.tap(find.byKey(const Key('recipes-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('load-formula-source')));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('save-as-recipe-button')));
+    await tester.tap(find.byKey(const Key('save-as-recipe-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('save-new-recipe-choice')));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('recipe-waxGrams')))
+          .controller!
+          .text,
+      '142',
+    );
+    expect(
+      tester
+          .widget<DropdownButtonFormField<String>>(
+            find.byKey(const Key('recipe-load-percent')),
+          )
+          .initialValue,
+      '9%',
+    );
+    expect(
+      tester
+          .widget<Slider>(find.byKey(const Key('recipe-fragrance-slider-0')))
+          .value,
+      75,
+    );
+    await tester.enterText(find.byKey(const Key('recipe-name')), 'Autumn 142');
+    await tester.ensureVisible(find.byKey(const Key('save-recipe')));
+    await tester.tap(find.byKey(const Key('save-recipe')));
+    await tester.pumpAndSettle();
+
+    final saved = (await repository.load()).singleWhere(
+      (item) => item.name == 'Autumn 142',
+    );
+    expect(saved.waxGrams, '142');
+    expect(saved.loadPercent, 9);
+    expect(saved.fragrances.map((part) => part.percent).toList(), ['75', '25']);
+    expect(value(tester, 'fragrance-per-container'), '12.78 g');
+    expect(value(tester, 'total-wax'), '426.00 g');
+    expect(value(tester, 'total-fragrance'), '38.34 g');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('container-count')))
+          .controller!
+          .text,
+      '3',
+    );
+
+    await tester.ensureVisible(find.byKey(const Key('recipes-button')));
+    await tester.tap(find.byKey(const Key('recipes-button')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(Key('load-${saved.id}')), findsOneWidget);
+    expect(find.text('Autumn 142'), findsOneWidget);
+    await tester.ensureVisible(find.byKey(Key('load-${saved.id}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('load-${saved.id}')));
+    await tester.pumpAndSettle();
+    expect(value(tester, 'fragrance-per-container'), '12.78 g');
+    expect(value(tester, 'total-wax'), '426.00 g');
+  });
+
+  testWidgets('Save as Recipe validates and cancel preserves calculation', (
+    tester,
+  ) async {
+    final repository = RecipeRepository(_MemoryStore());
+    await openCalculator(tester);
+    await tester.tap(find.byKey(const Key('save-as-recipe-button')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Enter a wax weight greater than zero before saving a recipe.'),
+      findsOneWidget,
+    );
+    await tester.enterText(find.byKey(const Key('wax-weight')), '125.5');
+    await tester.tap(find.byKey(const Key('save-as-recipe-button')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('recipe-waxGrams')))
+          .controller!
+          .text,
+      '125.5',
+    );
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(value(tester, 'fragrance-per-container'), '10.04 g');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('wax-weight')))
+          .controller!
+          .text,
+      '125.5',
+    );
+    expect(await repository.load(), isEmpty);
+  });
+
+  testWidgets('updating a loaded recipe requires confirmation', (tester) async {
+    final repository = RecipeRepository(_MemoryStore());
+    const source = CandleRecipe(
+      id: 'update-source',
+      name: 'Loaded blend',
+      waxGrams: '142',
+      loadPercent: 9,
+      fragrances: [
+        FragrancePart(name: 'Cedar', percent: '75'),
+        FragrancePart(name: 'Amber', percent: '25'),
+      ],
+    );
+    await repository.save(source);
+    await tester.pumpWidget(CandleApp(recipeRepository: repository));
+    await tester.tap(find.byKey(const Key('welcome-screen')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recipes-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('load-update-source')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('wax-weight')), '150');
+    await tester.tap(find.byKey(const Key('save-as-recipe-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('update-loaded-recipe-choice')));
+    await tester.pumpAndSettle();
+    expect(find.text('Overwrite saved recipe?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cancel-overwrite-recipe')));
+    await tester.pumpAndSettle();
+    expect((await repository.load()).single.waxGrams, '142');
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('wax-weight')))
+          .controller!
+          .text,
+      '150',
+    );
+
+    await tester.tap(find.byKey(const Key('save-as-recipe-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('update-loaded-recipe-choice')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-overwrite-recipe')));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('recipe-waxGrams')))
+          .controller!
+          .text,
+      '150',
+    );
+    await tester.ensureVisible(find.byKey(const Key('save-recipe')));
+    await tester.tap(find.byKey(const Key('save-recipe')));
+    await tester.pumpAndSettle();
+    final updated = (await repository.load()).single;
+    expect(updated.waxGrams, '150');
+    expect(updated.loadPercent, 9);
+    expect(updated.fragrances.map((part) => part.percent).toList(), [
+      '75',
+      '25',
+    ]);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('container-count')))
+          .controller!
+          .text,
+      '1',
+    );
+  });
+
   testWidgets('moving a blend slider updates its partner and amounts', (
     tester,
   ) async {
@@ -264,6 +453,133 @@ void main() {
     );
   });
 
+  testWidgets(
+    'clearing a loaded recipe resets calculator and saves a new draft',
+    (tester) async {
+      final repository = RecipeRepository(_MemoryStore());
+      const savedRecipe = CandleRecipe(
+        id: 'saved-cedar',
+        name: 'Saved Cedar',
+        waxGrams: '100',
+        loadPercent: 9,
+        fragrances: [
+          FragrancePart(name: 'Cedar', percent: '75'),
+          FragrancePart(name: 'Amber', percent: '25'),
+        ],
+      );
+      await repository.save(savedRecipe);
+      await tester.pumpWidget(CandleApp(recipeRepository: repository));
+      await tester.tap(find.byKey(const Key('welcome-screen')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('recipes-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('load-saved-cedar')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Loaded: Saved Cedar'), findsOneWidget);
+      expect(find.text('Cedar'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('clear-calculator-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Loaded: Saved Cedar'), findsNothing);
+      expect(find.byKey(const Key('fragrance-name-1')), findsNothing);
+      expect(find.byKey(const Key('fragrance-slider-0')), findsNothing);
+      expect(value(tester, 'fragrance-per-container'), '—');
+      expect(value(tester, 'total-wax'), '—');
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('container-count')))
+            .controller!
+            .text,
+        '1',
+      );
+      expect(
+        tester
+            .widget<DropdownButtonFormField<int>>(
+              find.byKey(const Key('fragrance-load')),
+            )
+            .initialValue,
+        8,
+      );
+
+      await tester.enterText(find.byKey(const Key('wax-weight')), '150');
+      await tester.tap(find.byKey(const Key('recipes-button')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('create-recipe')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const Key('recipe-name')),
+        'Fresh Pour',
+      );
+      await tester.ensureVisible(find.byKey(const Key('save-recipe')));
+      await tester.tap(find.byKey(const Key('save-recipe')));
+      await tester.pumpAndSettle();
+
+      final recipes = await repository.load();
+      expect(recipes, hasLength(2));
+      final unchanged = recipes.singleWhere(
+        (recipe) => recipe.id == 'saved-cedar',
+      );
+      expect(unchanged.name, savedRecipe.name);
+      expect(unchanged.waxGrams, savedRecipe.waxGrams);
+      expect(unchanged.loadPercent, savedRecipe.loadPercent);
+      expect(
+        unchanged.fragrances.map((part) => [part.name, part.percent]).toList(),
+        savedRecipe.fragrances
+            .map((part) => [part.name, part.percent])
+            .toList(),
+      );
+      expect(
+        recipes.singleWhere((recipe) => recipe.name == 'Fresh Pour').id,
+        isNot('saved-cedar'),
+      );
+    },
+  );
+
+  testWidgets('clearing changed calculator asks before discarding', (
+    tester,
+  ) async {
+    final repository = RecipeRepository(_MemoryStore());
+    await repository.save(
+      const CandleRecipe(
+        id: 'loaded',
+        name: 'Loaded',
+        waxGrams: '100',
+        fragrances: [FragrancePart(name: 'Cedar', percent: '100')],
+      ),
+    );
+    await tester.pumpWidget(CandleApp(recipeRepository: repository));
+    await tester.tap(find.byKey(const Key('welcome-screen')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('recipes-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('load-loaded')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byKey(const Key('wax-weight')), '120');
+    await tester.tap(find.byKey(const Key('clear-calculator-button')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Discard calculator changes?'), findsOneWidget);
+    await tester.tap(find.byKey(const Key('cancel-clear-calculator')));
+    await tester.pumpAndSettle();
+    expect(find.text('Loaded: Loaded'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('wax-weight')))
+          .controller!
+          .text,
+      '120',
+    );
+
+    await tester.tap(find.byKey(const Key('clear-calculator-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('confirm-clear-calculator')));
+    await tester.pumpAndSettle();
+    expect(find.text('Loaded: Loaded'), findsNothing);
+    expect(value(tester, 'fragrance-per-container'), '—');
+    expect((await repository.load()).single.waxGrams, '100');
+  });
+
   testWidgets('calculator save preserves newer linked cost assumptions', (
     tester,
   ) async {
@@ -323,5 +639,64 @@ void main() {
       'Second draft',
     ]);
     expect(recipes.map((recipe) => recipe.id).toSet(), hasLength(2));
+  });
+
+  testWidgets('recipe PDF actions support one or many selected recipes', (
+    tester,
+  ) async {
+    final repository = RecipeRepository(_MemoryStore());
+    await repository.save(
+      const CandleRecipe(id: 'pdf-one', name: 'First PDF recipe'),
+    );
+    await repository.save(
+      const CandleRecipe(id: 'pdf-two', name: 'Second PDF recipe'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RecipeLibraryPage(
+          repository: repository,
+          newRecipeTemplate: const CandleRecipe(id: 'template'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<OutlinedButton>(find.byKey(const Key('export-selected-pdf')))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byKey(const Key('select-pdf-one')));
+    await tester.pumpAndSettle();
+    expect(find.text('1 selected'), findsOneWidget);
+    expect(find.text('PDF printout (1)'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('print-selected-pdf')));
+    await tester.pumpAndSettle();
+    expect(find.text('Batch quantity'), findsOneWidget);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const Key('pdf-batch-count')))
+          .controller!
+          .text,
+      '1',
+    );
+    await tester.enterText(find.byKey(const Key('pdf-batch-count')), '0');
+    await tester.tap(find.byKey(const Key('confirm-pdf-batch')));
+    await tester.pumpAndSettle();
+    expect(find.text('Enter a positive whole number.'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('select-pdf-two')));
+    await tester.pumpAndSettle();
+    expect(find.text('2 selected'), findsOneWidget);
+    expect(find.text('PDF printout (2)'), findsOneWidget);
+    final recipes = await repository.load();
+    expect(recipes.map((recipe) => recipe.name).toSet(), {
+      'First PDF recipe',
+      'Second PDF recipe',
+    });
   });
 }

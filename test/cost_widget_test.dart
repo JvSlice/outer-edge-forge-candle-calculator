@@ -3,8 +3,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:outer_edge_forge_candle_calculator/cost_page.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe.dart';
 import 'package:outer_edge_forge_candle_calculator/recipe_repository.dart';
+import 'package:outer_edge_forge_candle_calculator/saved_costs.dart';
 
 class _MemoryStore implements RecipeStore {
+  String? value;
+  @override
+  Future<String?> read() async => value;
+  @override
+  Future<void> write(String newValue) async => value = newValue;
+}
+
+class _MemoryCostStore implements SavedCostStore {
   String? value;
   @override
   Future<String?> read() async => value;
@@ -32,6 +41,7 @@ void main() {
             ],
           ),
           initialContainers: '5',
+          savedCostRepository: SavedCostRepository(store: _MemoryCostStore()),
         ),
       ),
     );
@@ -55,6 +65,7 @@ void main() {
             wickQuantity: '2',
           ),
           initialContainers: '5',
+          savedCostRepository: SavedCostRepository(store: _MemoryCostStore()),
         ),
       ),
     );
@@ -97,6 +108,7 @@ void main() {
             repository: repository,
             initialRecipe: const CandleRecipe(id: 'one-off'),
             initialContainers: '5',
+            savedCostRepository: SavedCostRepository(store: _MemoryCostStore()),
           ),
         ),
       );
@@ -128,4 +140,40 @@ void main() {
       expect(find.text('One-off quantity changes'), findsOneWidget);
     },
   );
+
+  testWidgets('saves and reloads an independent cost snapshot', (tester) async {
+    final savedStore = _MemoryCostStore();
+    final savedCosts = SavedCostRepository(store: savedStore);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: CostPage(
+          repository: RecipeRepository(_MemoryStore()),
+          savedCostRepository: savedCosts,
+          initialRecipe: const CandleRecipe(
+            id: 'snapshot-source',
+            name: 'Autumn pour',
+            waxType: 'Soy',
+            waxGrams: '100',
+            wickQuantity: '2',
+            fragrances: [FragrancePart(name: 'Cedar', percent: '100')],
+          ),
+          initialContainers: '5',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('save-cost-calculation')));
+    await tester.tap(find.byKey(const Key('save-cost-calculation')));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).last, 'Autumn snapshot');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    final records = await savedCosts.load();
+    expect(records, hasLength(1));
+    expect(records.single.name, 'Autumn snapshot');
+    expect(records.single.containerCount, 5);
+    expect(records.single.recipeSnapshot.waxGrams, '100');
+    expect(records.single.linkedRecipeName, isNull);
+    expect(find.text('Autumn snapshot'), findsOneWidget);
+  });
 }

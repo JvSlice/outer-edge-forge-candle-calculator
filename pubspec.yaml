@@ -10,6 +10,8 @@ dependencies:
   flutter:
     sdk: flutter
   file_selector: ^1.1.0
+  pdf: ^3.12.0
+  printing: ^5.14.3
   shared_preferences: ^2.5.6
   web: ^1.1.1
 
@@ -18,5 +20,12 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^6.0.0
 
+dependency_overrides:
+  # image 4.11.0 calls archive.decodeLazy, but pdf 3.12.0 requires archive <4.1.
+  image: 4.10.2
+
 flutter:
   uses-material-design: true
+  assets:
+    - assets/branding/oef-icon-original.png
+    - assets/fonts/

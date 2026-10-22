@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:printing/printing.dart';
 
 import 'app_colors.dart';
+import 'candle_calculator.dart';
 import 'fragrance_ratios.dart';
 import 'fragrance_share_sliders.dart';
 import 'recipe.dart';
 import 'recipe_file_io.dart';
+import 'recipe_pdf_actions.dart';
+import 'recipe_pdf_document.dart';
 import 'recipe_repository.dart';
 
 class RecipeLibraryPage extends StatefulWidget {
@@ -23,6 +28,7 @@ class RecipeLibraryPage extends StatefulWidget {
 
 class _RecipeLibraryPageState extends State<RecipeLibraryPage> {
   late Future<List<CandleRecipe>> _recipes;
+  final Set<String> _selectedRecipeIds = {};
 
   @override
   void initState() {
@@ -83,6 +89,7 @@ class _RecipeLibraryPageState extends State<RecipeLibraryPage> {
     try {
       await widget.repository.delete(recipe.id);
       if (!mounted) return;
+      _selectedRecipeIds.remove(recipe.id);
       _refresh();
       _message('Recipe deleted.');
     } catch (error) {
@@ -136,6 +143,60 @@ class _RecipeLibraryPageState extends State<RecipeLibraryPage> {
     }
   }
 
+  Future<int?> _askBatchCount() async {
+    return showDialog<int>(
+      context: context,
+      builder: (_) => const _BatchQuantityDialog(),
+    );
+  }
+
+  String _pdfFileName(List<CandleRecipe> recipes) {
+    final stem = (recipes.length == 1 ? recipes.single.displayName : 'recipes')
+        .toLowerCase()
+        .replaceAll(RegExp('[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-+|-+$'), '');
+    return 'oef-candle-${stem.isEmpty ? 'recipes' : stem}-printout.pdf';
+  }
+
+  Future<void> _makePdf(
+    List<CandleRecipe> recipes, {
+    required bool print,
+  }) async {
+    if (recipes.isEmpty) return;
+    final batchCount = await _askBatchCount();
+    if (batchCount == null || !mounted) return;
+    try {
+      final bytes = await RecipePdfDocument.build(
+        recipes: recipes,
+        batchCount: batchCount,
+      );
+      if (!mounted) return;
+      final fileName = _pdfFileName(recipes);
+      if (kIsWeb) {
+        await Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => RecipePdfActionsPage(
+              bytes: bytes,
+              fileName: fileName,
+              recipeCount: recipes.length,
+              batchCount: batchCount,
+            ),
+          ),
+        );
+      } else if (print) {
+        await Printing.layoutPdf(name: fileName, onLayout: (_) async => bytes);
+      } else {
+        await Printing.sharePdf(
+          bytes: bytes,
+          filename: fileName,
+          subject: 'OEF candle recipe printout',
+        );
+      }
+    } catch (error) {
+      if (mounted) _message('Could not create the PDF printout: $error');
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Saved recipes')),
@@ -144,6 +205,9 @@ class _RecipeLibraryPageState extends State<RecipeLibraryPage> {
         future: _recipes,
         builder: (context, snapshot) {
           final recipes = snapshot.data ?? [];
+          final selectedRecipes = recipes
+              .where((recipe) => _selectedRecipeIds.contains(recipe.id))
+              .toList();
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
@@ -178,8 +242,57 @@ class _RecipeLibraryPageState extends State<RecipeLibraryPage> {
                     icon: const Icon(Icons.upload_file),
                     label: const Text('Import JSON'),
                   ),
+                  OutlinedButton.icon(
+                    key: const Key('export-selected-pdf'),
+                    onPressed: selectedRecipes.isEmpty
+                        ? null
+                        : () => _makePdf(selectedRecipes, print: false),
+                    icon: const Icon(Icons.picture_as_pdf_outlined),
+                    label: Text('PDF printout (${selectedRecipes.length})'),
+                  ),
+                  OutlinedButton.icon(
+                    key: const Key('print-selected-pdf'),
+                    onPressed: selectedRecipes.isEmpty
+                        ? null
+                        : () => _makePdf(selectedRecipes, print: true),
+                    icon: const Icon(Icons.print_outlined),
+                    label: const Text('Print selected'),
+                  ),
                 ],
               ),
+              if (recipes.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    TextButton(
+                      key: const Key('toggle-select-all-recipes'),
+                      onPressed: () => setState(() {
+                        if (_selectedRecipeIds.length == recipes.length) {
+                          _selectedRecipeIds.clear();
+                        } else {
+                          _selectedRecipeIds
+                            ..clear()
+                            ..addAll(recipes.map((recipe) => recipe.id));
+                        }
+                      }),
+                      child: Text(
+                        _selectedRecipeIds.length == recipes.length
+                            ? 'Clear selection'
+                            : 'Select all',
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${selectedRecipes.length} selected',
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                  ],
+                ),
+                const Text(
+                  'PDF printouts are for printing and reference. Export JSON for editable backups.',
+                  style: TextStyle(color: AppColors.muted, height: 1.4),
+                ),
+              ],
               const SizedBox(height: 24),
               if (snapshot.hasError)
                 Text(
@@ -202,14 +315,34 @@ class _RecipeLibraryPageState extends State<RecipeLibraryPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            recipe.displayName,
-                            style: const TextStyle(
-                              fontSize: 21,
-                              fontWeight: FontWeight.w600,
-                            ),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Checkbox(
+                                key: Key('select-${recipe.id}'),
+                                semanticLabel:
+                                    'Select ${recipe.displayName} for PDF printout',
+                                value: _selectedRecipeIds.contains(recipe.id),
+                                onChanged: (selected) => setState(() {
+                                  if (selected == true) {
+                                    _selectedRecipeIds.add(recipe.id);
+                                  } else {
+                                    _selectedRecipeIds.remove(recipe.id);
+                                  }
+                                }),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  recipe.displayName,
+                                  style: const TextStyle(
+                                    fontSize: 21,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
                           Text(
                             [
                               if (recipe.containerName.trim().isNotEmpty)
@@ -267,10 +400,12 @@ class RecipeEditorPage extends StatefulWidget {
     super.key,
     required this.repository,
     required this.recipe,
+    this.requireUsableFormula = false,
   });
 
   final RecipeRepository repository;
   final CandleRecipe recipe;
+  final bool requireUsableFormula;
 
   @override
   State<RecipeEditorPage> createState() => _RecipeEditorPageState();
@@ -368,10 +503,12 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
     String label,
     String value,
     List<String> units,
-    ValueChanged<String> onChanged,
-  ) => Padding(
+    ValueChanged<String> onChanged, {
+    Key? key,
+  }) => Padding(
     padding: const EdgeInsets.only(bottom: 16),
     child: DropdownButtonFormField<String>(
+      key: key,
       initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(labelText: label),
@@ -402,6 +539,39 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
 
   Future<void> _save() async {
     if (_saving) return;
+    if (widget.requireUsableFormula) {
+      final name = _text('name').trim();
+      if (name.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a recipe name before saving.')),
+        );
+        return;
+      }
+      if (CandleCalculator.parseWaxGrams(_text('waxGrams')) == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Enter a wax weight greater than zero before saving a recipe.',
+            ),
+          ),
+        );
+        return;
+      }
+      if (CandleCalculator.parseBlendPercentages([
+            for (var index = 0; index < _fragranceCount; index++)
+              _fragrancePercents[index].text,
+          ]) ==
+          null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Set valid fragrance shares totaling 100% before saving a recipe.',
+            ),
+          ),
+        );
+        return;
+      }
+    }
     setState(() => _saving = true);
     final fragrances = List.generate(
       _fragranceCount,
@@ -491,6 +661,7 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
                   [6, 7, 8, 9, 10].map((value) => '$value%').toList(),
                   (value) =>
                       _loadPercent = int.parse(value.replaceAll('%', '')),
+                  key: const Key('recipe-load-percent'),
                 ),
                 DropdownButtonFormField<int>(
                   key: const Key('recipe-fragrance-count'),
@@ -588,5 +759,61 @@ class _RecipeEditorPageState extends State<RecipeEditorPage> {
         fontWeight: FontWeight.w600,
       ),
     ),
+  );
+}
+
+class _BatchQuantityDialog extends StatefulWidget {
+  const _BatchQuantityDialog();
+
+  @override
+  State<_BatchQuantityDialog> createState() => _BatchQuantityDialogState();
+}
+
+class _BatchQuantityDialogState extends State<_BatchQuantityDialog> {
+  final _controller = TextEditingController(text: '1');
+  String? _errorText;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _continue() {
+    final count = int.tryParse(_controller.text.trim());
+    if (count == null || count <= 0) {
+      setState(() => _errorText = 'Enter a positive whole number.');
+      return;
+    }
+    Navigator.pop(context, count);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Batch quantity'),
+    content: TextField(
+      key: const Key('pdf-batch-count'),
+      controller: _controller,
+      autofocus: true,
+      keyboardType: TextInputType.number,
+      decoration: InputDecoration(
+        labelText: 'Containers per recipe',
+        errorText: _errorText,
+      ),
+      onChanged: (_) {
+        if (_errorText != null) setState(() => _errorText = null);
+      },
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
+      FilledButton(
+        key: const Key('confirm-pdf-batch'),
+        onPressed: _continue,
+        child: const Text('Continue'),
+      ),
+    ],
   );
 }

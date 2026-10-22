@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
@@ -80,6 +82,7 @@ class _CandleHomeState extends State<CandleHome> {
   );
   late final RecipeRepository _recipeRepository;
   CandleRecipe? _activeRecipe;
+  String? _loadedCalculatorState;
   bool _started = false;
   bool _showSplit = false;
   int _loadPercent = 8;
@@ -112,6 +115,64 @@ class _CandleHomeState extends State<CandleHome> {
       percent: _fragrancePercents[index].text,
     ),
   );
+
+  String _calculatorState() => jsonEncode([
+    _waxController.text,
+    _containerController.text,
+    _loadPercent,
+    _fragranceCount,
+    _showSplit,
+    ..._fragranceNames.map((controller) => controller.text),
+    ..._fragrancePercents.map((controller) => controller.text),
+  ]);
+
+  bool get _calculatorIsDefault =>
+      _calculatorState() ==
+      jsonEncode(['', '1', 8, 1, false, '', '', '', '100', '', '']);
+
+  bool get _calculatorHasUnsavedChanges => _activeRecipe == null
+      ? !_calculatorIsDefault
+      : _calculatorState() != _loadedCalculatorState;
+
+  Future<void> _clearCalculator() async {
+    if (_calculatorHasUnsavedChanges) {
+      final discard = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Discard calculator changes?'),
+          content: const Text(
+            'This clears the current calculator inputs. Saved recipes and cost calculations will stay unchanged.',
+          ),
+          actions: [
+            TextButton(
+              key: const Key('cancel-clear-calculator'),
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Keep editing'),
+            ),
+            FilledButton(
+              key: const Key('confirm-clear-calculator'),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Discard and clear'),
+            ),
+          ],
+        ),
+      );
+      if (discard != true) return;
+    }
+    setState(() {
+      _activeRecipe = null;
+      _loadedCalculatorState = null;
+      _waxController.clear();
+      _containerController.text = '1';
+      _loadPercent = 8;
+      _fragranceCount = 1;
+      _showSplit = false;
+      for (var index = 0; index < 3; index++) {
+        _fragranceNames[index].clear();
+        _fragrancePercents[index].text = index == 0 ? '100' : '';
+      }
+    });
+  }
 
   void _setFragranceCount(int count) {
     final equal = FragranceRatios.equal(count);
@@ -177,6 +238,7 @@ class _CandleHomeState extends State<CandleHome> {
             : '';
       }
     });
+    _loadedCalculatorState = _calculatorState();
   }
 
   Future<void> _saveChanges() async {
@@ -199,7 +261,10 @@ class _CandleHomeState extends State<CandleHome> {
       );
       await _recipeRepository.save(updated);
       if (!mounted) return;
-      setState(() => _activeRecipe = updated);
+      setState(() {
+        _activeRecipe = updated;
+        _loadedCalculatorState = _calculatorState();
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Recipe changes saved on this device.')),
       );
@@ -209,6 +274,159 @@ class _CandleHomeState extends State<CandleHome> {
         context,
       ).showSnackBar(SnackBar(content: Text('Could not save recipe: $error')));
     }
+  }
+
+  Future<void> _saveAsRecipe() async {
+    final wax = CandleCalculator.parseWaxGrams(_waxController.text);
+    if (wax == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Enter a wax weight greater than zero before saving a recipe.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (CandleCalculator.parseBlendPercentages(
+          _currentFragrances.map((part) => part.percent).toList(),
+        ) ==
+        null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Set valid fragrance shares totaling 100% before saving a recipe.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    var updateLoaded = false;
+    var existing = _activeRecipe;
+    if (existing != null) {
+      final choice = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Save calculator as a recipe'),
+          content: Text(
+            'Create a new recipe, or update “${existing!.displayName}” with the formula currently on screen?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            OutlinedButton(
+              key: const Key('save-new-recipe-choice'),
+              onPressed: () => Navigator.pop(dialogContext, 'new'),
+              child: const Text('Save new recipe'),
+            ),
+            FilledButton(
+              key: const Key('update-loaded-recipe-choice'),
+              onPressed: () => Navigator.pop(dialogContext, 'update'),
+              child: const Text('Update loaded recipe'),
+            ),
+          ],
+        ),
+      );
+      if (choice == null || !mounted) return;
+      updateLoaded = choice == 'update';
+      if (updateLoaded) {
+        try {
+          final matches = (await _recipeRepository.load()).where(
+            (item) => item.id == existing!.id,
+          );
+          if (matches.isEmpty) {
+            throw const FormatException(
+              'The loaded recipe was deleted. Choose Save new recipe instead.',
+            );
+          }
+          existing = matches.single;
+        } catch (error) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Could not update recipe: $error')),
+            );
+          }
+          return;
+        }
+        if (!mounted) return;
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Overwrite saved recipe?'),
+            content: Text(
+              'Update “${existing!.displayName}” using the current calculator formula? Its other recipe details will stay available to edit.',
+            ),
+            actions: [
+              TextButton(
+                key: const Key('cancel-overwrite-recipe'),
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                key: const Key('confirm-overwrite-recipe'),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Continue to editor'),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true || !mounted) return;
+      }
+    }
+
+    final current = _currentFragrances;
+    final seed = updateLoaded
+        ? existing!.copyWith(
+            waxGrams: _waxController.text.trim(),
+            loadPercent: _loadPercent,
+            fragrances: current,
+            costs: existing.costs?.alignedToNames(
+              existing.fragrances.map((part) => part.name).toList(),
+              current.map((part) => part.name).toList(),
+            ),
+          )
+        : CandleRecipe(
+            id: _recipeRepository.newId(),
+            waxGrams: _waxController.text.trim(),
+            loadPercent: _loadPercent,
+            fragrances: current,
+          );
+    final saved = await Navigator.of(context).push<CandleRecipe>(
+      MaterialPageRoute(
+        builder: (_) => RecipeEditorPage(
+          repository: _recipeRepository,
+          recipe: seed,
+          requireUsableFormula: true,
+        ),
+      ),
+    );
+    if (!mounted || saved == null) return;
+    setState(() {
+      _activeRecipe = saved;
+      _waxController.text = saved.waxGrams;
+      _loadPercent = saved.loadPercent;
+      _fragranceCount = saved.fragrances.length;
+      _showSplit = true;
+      for (var index = 0; index < 3; index++) {
+        _fragranceNames[index].text = index < saved.fragrances.length
+            ? saved.fragrances[index].name
+            : '';
+        _fragrancePercents[index].text = index < saved.fragrances.length
+            ? saved.fragrances[index].percent
+            : '';
+      }
+      _loadedCalculatorState = _calculatorState();
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Saved recipe “${saved.displayName}”. You can reopen it from Recipes.',
+        ),
+      ),
+    );
   }
 
   Future<void> _openCosts() async {
@@ -386,6 +604,12 @@ class _CandleHomeState extends State<CandleHome> {
                         icon: const Icon(Icons.calculate_outlined),
                         label: const Text('Material costs'),
                       ),
+                      OutlinedButton.icon(
+                        key: const Key('save-as-recipe-button'),
+                        onPressed: _saveAsRecipe,
+                        icon: const Icon(Icons.bookmark_add_outlined),
+                        label: const Text('Save as Recipe'),
+                      ),
                       if (_activeRecipe != null) ...[
                         Text(
                           'Loaded: ${_activeRecipe!.displayName}',
@@ -397,6 +621,13 @@ class _CandleHomeState extends State<CandleHome> {
                           child: const Text('Save Changes'),
                         ),
                       ],
+                      if (_activeRecipe != null || !_calculatorIsDefault)
+                        OutlinedButton.icon(
+                          key: const Key('clear-calculator-button'),
+                          onPressed: _clearCalculator,
+                          icon: const Icon(Icons.restart_alt),
+                          label: const Text('New / Clear Calculator'),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 30),

@@ -7,6 +7,10 @@ import 'fragrance_ratios.dart';
 import 'fragrance_share_sliders.dart';
 import 'recipe.dart';
 import 'recipe_repository.dart';
+import 'saved_costs.dart';
+import 'recipe_file_io.dart';
+import 'cost_pdf_document.dart';
+import 'cost_pdf_actions.dart';
 
 class CostPage extends StatefulWidget {
   const CostPage({
@@ -14,11 +18,13 @@ class CostPage extends StatefulWidget {
     required this.repository,
     required this.initialRecipe,
     required this.initialContainers,
+    this.savedCostRepository,
   });
 
   final RecipeRepository repository;
   final CandleRecipe initialRecipe;
   final String initialContainers;
+  final SavedCostRepository? savedCostRepository;
 
   @override
   State<CostPage> createState() => _CostPageState();
@@ -41,10 +47,14 @@ class _CostPageState extends State<CostPage> {
   String? _message;
   int _loadPercent = 8;
   int _fragranceCount = 1;
+  late final SavedCostRepository _savedRepository;
+  List<SavedCostCalculation> _savedCalculations = [];
+  SavedCostCalculation? _editingSaved;
 
   @override
   void initState() {
     super.initState();
+    _savedRepository = widget.savedCostRepository ?? SavedCostRepository();
     for (final key in [
       'waxType',
       'waxGrams',
@@ -66,6 +76,220 @@ class _CostPageState extends State<CostPage> {
     _applyRecipe(widget.initialRecipe, linked: false);
     _fields['containers']!.text = widget.initialContainers;
     _refreshRecipes();
+    _refreshSavedCalculations();
+  }
+
+  Future<void> _refreshSavedCalculations() async {
+    try {
+      final saved = await _savedRepository.load();
+      if (mounted) setState(() => _savedCalculations = saved);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _message = 'Could not load saved cost calculations: $error',
+        );
+      }
+    }
+  }
+
+  CandleRecipe _snapshotRecipe() => CandleRecipe(
+    id: _savedRepository.newId(),
+    name: _text('waxType').trim(),
+    waxType: _text('waxType').trim(),
+    waxGrams: _text('waxGrams').trim(),
+    loadPercent: _loadPercent,
+    fragrances: [
+      for (var i = 0; i < _fragranceCount; i++)
+        FragrancePart(
+          name: _names[i].text.trim(),
+          percent: _shares[i].text.trim(),
+        ),
+    ],
+    wickQuantity: _text('wickQuantity').trim(),
+    costs: CostAssumptions.fromJson(_costs.toJson()),
+  );
+
+  Future<void> _saveCalculation() async {
+    var enteredName = _editingSaved?.name ?? _loaded?.displayName ?? '';
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          _editingSaved == null
+              ? 'Save cost calculation'
+              : 'Edit saved calculation',
+        ),
+        content: TextFormField(
+          initialValue: enteredName,
+          onChanged: (value) => enteredName = value,
+          autofocus: true,
+          maxLength: 200,
+          decoration: const InputDecoration(labelText: 'Calculation name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, enteredName.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty) return;
+    try {
+      final recipe = _snapshotRecipe();
+      final now = DateTime.now().toUtc();
+      final previous = _editingSaved;
+      final record = SavedCostCalculation(
+        id: previous?.id ?? _savedRepository.newId(),
+        name: name,
+        recipeSnapshot: recipe,
+        containerCount: int.parse(_text('containers')),
+        createdAt: previous?.createdAt ?? now,
+        updatedAt: now,
+        linkedRecipeId: _loaded?.id ?? previous?.linkedRecipeId,
+        linkedRecipeName: _loaded?.displayName ?? previous?.linkedRecipeName,
+      );
+      await _savedRepository.save(record);
+      if (mounted) {
+        setState(() {
+          _editingSaved = record;
+          _message = 'Saved “$name” as an independent snapshot.';
+        });
+      }
+      await _refreshSavedCalculations();
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Could not save calculation: $error');
+      }
+    }
+  }
+
+  void _restoreCalculation(
+    SavedCostCalculation record, {
+    bool editing = false,
+  }) {
+    setState(() {
+      _applyRecipe(record.recipeSnapshot, linked: false);
+      _fields['containers']!.text = '${record.containerCount}';
+      _editingSaved = editing ? record : null;
+      _message = 'Restored snapshot “${record.name}”.';
+    });
+  }
+
+  Future<void> _deleteCalculation(SavedCostCalculation record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete saved calculation?'),
+        content: Text('“${record.name}” will be removed from this device.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await _savedRepository.delete(record.id);
+    if (_editingSaved?.id == record.id) setState(() => _editingSaved = null);
+    await _refreshSavedCalculations();
+  }
+
+  Future<void> _duplicateCalculation(SavedCostCalculation record) async {
+    final copy = SavedCostCalculation(
+      id: _savedRepository.newId(),
+      name: '${record.name} (copy)',
+      recipeSnapshot: record.recipeSnapshot,
+      containerCount: record.containerCount,
+      createdAt: DateTime.now().toUtc(),
+      updatedAt: DateTime.now().toUtc(),
+      linkedRecipeId: record.linkedRecipeId,
+      linkedRecipeName: record.linkedRecipeName,
+    );
+    await _savedRepository.save(copy);
+    await _refreshSavedCalculations();
+  }
+
+  Future<void> _refreshFromLinkedRecipe(SavedCostCalculation record) async {
+    if (record.linkedRecipeId == null) return;
+    final recipes = await widget.repository.load();
+    final matches = recipes.where((item) => item.id == record.linkedRecipeId);
+    if (matches.isEmpty) {
+      setState(() => _message = 'The linked recipe no longer exists.');
+      return;
+    }
+    final latest = matches.single;
+    final refreshed = latest.copyWith(
+      costs: latest.costs ?? record.recipeSnapshot.costs,
+    );
+    final updated = SavedCostCalculation(
+      id: record.id,
+      name: record.name,
+      recipeSnapshot: refreshed,
+      containerCount: record.containerCount,
+      createdAt: record.createdAt,
+      updatedAt: DateTime.now().toUtc(),
+      linkedRecipeId: latest.id,
+      linkedRecipeName: latest.displayName,
+    );
+    await _savedRepository.save(updated);
+    _restoreCalculation(updated, editing: true);
+    await _refreshSavedCalculations();
+  }
+
+  Future<void> _exportSavedJson() async => RecipeFileIo.downloadJson(
+    await _savedRepository.exportJson(),
+    fileName: 'oef-cost-calculations.json',
+  );
+  Future<void> _exportCsv() async => RecipeFileIo.downloadText(
+    costCalculationsCsv(_savedCalculations),
+    'oef-cost-calculations.csv',
+    'text/csv;charset=utf-8',
+  );
+  Future<void> _importSavedJson() async {
+    try {
+      final text = await RecipeFileIo.pickJson();
+      if (text == null) return;
+      final count = await _savedRepository.importJson(text);
+      await _refreshSavedCalculations();
+      if (mounted) {
+        setState(
+          () => _message =
+              'Imported $count calculation snapshot${count == 1 ? '' : 's'} as copies.',
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _message = 'Could not import calculations: $error');
+      }
+    }
+  }
+
+  Future<void> _printCost(SavedCostCalculation record) async {
+    try {
+      final bytes = await CostPdfDocument.build(record);
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => CostPdfActionsPage(
+            bytes: bytes,
+            fileName:
+                'oef-cost-${record.name.replaceAll(RegExp(r'[^a-zA-Z0-9]+'), '-').toLowerCase()}.pdf',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) setState(() => _message = 'Could not create PDF: $error');
+    }
   }
 
   Future<void> _refreshRecipes() async {
@@ -658,6 +882,127 @@ class _CostPageState extends State<CostPage> {
                       'Batch material cost',
                       result?.materialCostBatch,
                       suffix: ' \$',
+                    ),
+                  ]),
+                  _section('Saved cost calculations', [
+                    const Text(
+                      'Each saved calculation keeps its own candle quantities and purchase-price snapshot. Later recipe changes do not alter it.',
+                      style: TextStyle(color: AppColors.muted, height: 1.4),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: FilledButton.icon(
+                        key: const Key('save-cost-calculation'),
+                        onPressed: result == null ? null : _saveCalculation,
+                        icon: const Icon(Icons.save_outlined),
+                        label: Text(
+                          _editingSaved == null
+                              ? 'Save this calculation'
+                              : 'Save changes to snapshot',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _exportCsv,
+                          icon: const Icon(Icons.table_chart_outlined),
+                          label: const Text('Export CSV'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _exportSavedJson,
+                          icon: const Icon(Icons.download_outlined),
+                          label: const Text('Export JSON backup'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: _importSavedJson,
+                          icon: const Icon(Icons.upload_file_outlined),
+                          label: const Text('Import JSON'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (_savedCalculations.isEmpty)
+                      const Text(
+                        'No saved cost calculations yet.',
+                        style: TextStyle(color: AppColors.muted),
+                      )
+                    else
+                      for (final saved in _savedCalculations)
+                        Card(
+                          color: AppColors.background,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  saved.name,
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.copper,
+                                  ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  '${saved.linkedRecipeName == null ? 'Standalone snapshot' : 'Recipe snapshot: ${saved.linkedRecipeName}'} · ${saved.containerCount} containers · updated ${saved.updatedAt.toLocal().toString().split('.').first}',
+                                  style: const TextStyle(
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 2,
+                                  children: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          _restoreCalculation(saved),
+                                      child: const Text('Load snapshot'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => _restoreCalculation(
+                                        saved,
+                                        editing: true,
+                                      ),
+                                      child: const Text('Edit'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          _duplicateCalculation(saved),
+                                      child: const Text('Duplicate'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => _printCost(saved),
+                                      child: const Text('PDF / Print'),
+                                    ),
+                                    if (saved.linkedRecipeId != null)
+                                      TextButton(
+                                        onPressed: () =>
+                                            _refreshFromLinkedRecipe(saved),
+                                        child: const Text(
+                                          'Refresh from recipe',
+                                        ),
+                                      ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          _deleteCalculation(saved),
+                                      child: const Text('Delete'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                    const Text(
+                      'CSV and PDF totals show material costs only; labor, taxes, selling fees, and profit are excluded. Displayed currency rounds upward to the next cent.',
+                      style: TextStyle(color: AppColors.muted, height: 1.4),
                     ),
                   ]),
                 ],
